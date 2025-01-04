@@ -45,7 +45,7 @@ for (const file of commandFiles) {
 
 // Register Commands
 client.once(Events.ClientReady, async () => {
-    const guild = client.guilds.cache.get("1293071121998020630"); // Replace with your server's ID
+    const guild = client.guilds.cache.get("768632778396139550"); // Replace with your server's ID
     if (guild) {
         await guild.commands.set(
             client.commands.map((command) => command.data),
