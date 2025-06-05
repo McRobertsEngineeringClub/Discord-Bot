@@ -32,6 +32,38 @@ function getCurrentSheetName() {
   return `${academicStartYear}/${academicEndYear} Engineering Club Sign Up Sheet  (Responses)`
 }
 
+// Helper function to find the correct sheet name by searching all sheets
+async function findCorrectSheetName(sheets, spreadsheetId) {
+  try {
+    // Get all sheet names from the spreadsheet
+    const spreadsheet = await sheets.spreadsheets.get({
+      spreadsheetId: spreadsheetId,
+    })
+
+    const sheetNames = spreadsheet.data.sheets.map((sheet) => sheet.properties.title)
+    console.log("Available sheets:", sheetNames)
+
+    // Look for a sheet that contains "Engineering Club Sign Up" and "Responses"
+    const targetSheet = sheetNames.find(
+      (name) => name.includes("Engineering Club Sign Up") && name.includes("Responses") && name.includes("2024/2025"),
+    )
+
+    if (targetSheet) {
+      console.log("Found matching sheet:", targetSheet)
+      return targetSheet
+    }
+
+    // If no exact match, try the current year pattern
+    const currentYearPattern = getCurrentSheetName()
+    const fallbackSheet = sheetNames.find((name) => name.includes("2024/2025"))
+
+    return fallbackSheet || sheetNames[0] // Return first sheet as last resort
+  } catch (error) {
+    console.error("Error finding sheet name:", error)
+    return getCurrentSheetName() // Fallback to generated name
+  }
+}
+
 // Helper function to get emails from Google Sheets
 async function getClubEmails() {
   try {
@@ -57,7 +89,10 @@ async function getClubEmails() {
     })
 
     const sheets = google.sheets({ version: "v4", auth })
-    const sheetName = getCurrentSheetName()
+
+    // Find the correct sheet name dynamically
+    const sheetName = await findCorrectSheetName(sheets, process.env.GOOGLE_SHEETS_ID)
+    console.log("Using sheet name:", sheetName)
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEETS_ID,
@@ -69,7 +104,7 @@ async function getClubEmails() {
       .filter((email) => email && email.includes("@"))
       .filter((email, index, arr) => arr.indexOf(email) === index) // Remove duplicates
 
-    return emails || []
+    return { emails: emails || [], sheetName }
   } catch (error) {
     console.error("Error fetching emails from Google Sheets:", error)
     throw error
@@ -175,6 +210,7 @@ export default {
         ),
     )
     .addSubcommand((subcommand) => subcommand.setName("test-emails").setDescription("Test email list connection"))
+    .addSubcommand((subcommand) => subcommand.setName("list-sheets").setDescription("List all available sheets"))
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
     .setDMPermission(false),
 
@@ -299,8 +335,9 @@ export default {
           content: "📊 Testing Google Sheets connection...",
         })
 
-        const emails = await getClubEmails()
-        const sheetName = getCurrentSheetName()
+        const result = await getClubEmails()
+        const emails = result.emails
+        const actualSheetName = result.sheetName
 
         await interaction.editReply({
           content: null,
@@ -308,7 +345,7 @@ export default {
             {
               title: "📊 Email List Test Results",
               fields: [
-                { name: "Sheet Name", value: sheetName, inline: false },
+                { name: "Actual Sheet Name", value: actualSheetName, inline: false },
                 { name: "Emails Found", value: emails.length.toString(), inline: true },
                 {
                   name: "Sample Emails",
@@ -347,7 +384,7 @@ export default {
                   inline: false,
                 },
                 {
-                  name: "Current Sheet Name",
+                  name: "Expected Sheet Name",
                   value: getCurrentSheetName(),
                   inline: false,
                 },
@@ -355,6 +392,63 @@ export default {
               color: 0xff0000,
             },
           ],
+        })
+      }
+    } else if (subcommand === "list-sheets") {
+      try {
+        await interaction.editReply({
+          content: "📋 Fetching all available sheets...",
+        })
+
+        const auth = new google.auth.GoogleAuth({
+          credentials: {
+            type: "service_account",
+            project_id: process.env.GOOGLE_PROJECT_ID,
+            private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
+            private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+            client_email: process.env.GOOGLE_CLIENT_EMAIL,
+            client_id: process.env.GOOGLE_CLIENT_ID,
+            auth_uri: "https://accounts.google.com/o/oauth2/auth",
+            token_uri: "https://oauth2.googleapis.com/token",
+            auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
+            client_x509_cert_url: process.env.GOOGLE_CLIENT_CERT_URL,
+          },
+          scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+        })
+
+        const sheets = google.sheets({ version: "v4", auth })
+        const spreadsheet = await sheets.spreadsheets.get({
+          spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+        })
+
+        const sheetNames = spreadsheet.data.sheets.map((sheet) => sheet.properties.title)
+
+        await interaction.editReply({
+          content: null,
+          embeds: [
+            {
+              title: "📋 Available Sheets",
+              description: sheetNames.map((name, index) => `${index + 1}. ${name}`).join("\n"),
+              fields: [
+                {
+                  name: "Total Sheets",
+                  value: sheetNames.length.toString(),
+                  inline: true,
+                },
+                {
+                  name: "Expected Pattern",
+                  value: getCurrentSheetName(),
+                  inline: false,
+                },
+              ],
+              color: 0x0099ff,
+            },
+          ],
+        })
+      } catch (error) {
+        console.error("Error listing sheets:", error)
+        await interaction.editReply({
+          content: `❌ Error listing sheets: ${error.message}`,
         })
       }
     }
@@ -438,7 +532,8 @@ export default {
 
           try {
             // Get club emails
-            const emails = await getClubEmails()
+            const result = await getClubEmails()
+            const emails = result.emails
             if (emails.length === 0) {
               throw new Error("No club member emails found")
             }
