@@ -61,7 +61,7 @@ async function getClubEmails() {
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEETS_ID,
-      range: `${sheetName}!B:B`, // Column B contains emails
+      range: `'${sheetName}'!B:B`, // Column B contains emails - wrapped in quotes for special characters
     })
 
     const emails = response.data.values
