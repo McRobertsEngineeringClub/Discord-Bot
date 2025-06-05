@@ -32,60 +32,58 @@ function getCurrentSheetName() {
   return `${academicStartYear}/${academicEndYear} Engineering Club Sign Up Sheet  (Responses)`
 }
 
-// Helper function to get emails from Google Sheets with timeout
+// Helper function to get emails from Google Sheets
 async function getClubEmails() {
-  const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("Google Sheets request timed out")), 8000),
-  )
-
-  const fetchEmails = async () => {
-    try {
-      const auth = new google.auth.GoogleAuth({
-        credentials: {
-          type: "service_account",
-          project_id: process.env.GOOGLE_PROJECT_ID,
-          private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
-          private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-          client_email: process.env.GOOGLE_CLIENT_EMAIL,
-          client_id: process.env.GOOGLE_CLIENT_ID,
-          auth_uri: "https://accounts.google.com/o/oauth2/auth",
-          token_uri: "https://oauth2.googleapis.com/token",
-          auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
-          client_x509_cert_url: process.env.GOOGLE_CLIENT_CERT_URL,
-        },
-        scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
-      })
-
-      const sheets = google.sheets({ version: "v4", auth })
-      const sheetName = getCurrentSheetName()
-
-      const response = await sheets.spreadsheets.values.get({
-        spreadsheetId: process.env.GOOGLE_SHEETS_ID,
-        range: `${sheetName}!B:B`, // Column B contains emails
-      })
-
-      const emails = response.data.values
-        ?.flat()
-        .filter((email) => email && email.includes("@"))
-        .filter((email, index, arr) => arr.indexOf(email) === index) // Remove duplicates
-
-      return emails || []
-    } catch (error) {
-      console.error("Error fetching emails from Google Sheets:", error)
-      throw new Error(`Failed to fetch club member emails: ${error.message}`)
+  try {
+    // Check if required environment variables exist
+    if (!process.env.GOOGLE_SHEETS_ID || !process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+      throw new Error("Missing Google Sheets environment variables")
     }
-  }
 
-  return Promise.race([fetchEmails(), timeout])
+    const auth = new google.auth.GoogleAuth({
+      credentials: {
+        type: "service_account",
+        project_id: process.env.GOOGLE_PROJECT_ID,
+        private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
+        private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+        client_email: process.env.GOOGLE_CLIENT_EMAIL,
+        client_id: process.env.GOOGLE_CLIENT_ID,
+        auth_uri: "https://accounts.google.com/o/oauth2/auth",
+        token_uri: "https://oauth2.googleapis.com/token",
+        auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
+        client_x509_cert_url: process.env.GOOGLE_CLIENT_CERT_URL,
+      },
+      scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+    })
+
+    const sheets = google.sheets({ version: "v4", auth })
+    const sheetName = getCurrentSheetName()
+
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+      range: `${sheetName}!B:B`, // Column B contains emails
+    })
+
+    const emails = response.data.values
+      ?.flat()
+      .filter((email) => email && email.includes("@"))
+      .filter((email, index, arr) => arr.indexOf(email) === index) // Remove duplicates
+
+    return emails || []
+  } catch (error) {
+    console.error("Error fetching emails from Google Sheets:", error)
+    throw error
+  }
 }
 
-// Helper function to generate announcement content using Groq with timeout
+// Helper function to generate announcement content using Groq
 async function generateAnnouncement(topic, additionalInfo = "") {
-  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("AI generation timed out")), 10000))
+  try {
+    if (!process.env.GROQ_API_KEY) {
+      throw new Error("Missing Groq API key")
+    }
 
-  const generateContent = async () => {
-    try {
-      const prompt = `You are writing announcements for an engineering club. Generate both a Discord announcement and an email announcement for the following topic: "${topic}"
+    const prompt = `You are writing announcements for an engineering club. Generate both a Discord announcement and an email announcement for the following topic: "${topic}"
 
 ${additionalInfo ? `Additional context: ${additionalInfo}` : ""}
 
@@ -116,26 +114,23 @@ Engineering Club Execs
 
 Keep the Discord announcement concise and exciting. Make the email more detailed and professional. Use engineering/tech emojis appropriately.`
 
-      const completion = await groq.chat.completions.create({
-        messages: [
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        model: "deepseek-r1-distill-llama-70b",
-        temperature: 0.7,
-        max_tokens: 1000,
-      })
+    const completion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      model: "deepseek-r1-distill-llama-70b",
+      temperature: 0.7,
+      max_tokens: 1000,
+    })
 
-      return completion.choices[0]?.message?.content || "Failed to generate announcement"
-    } catch (error) {
-      console.error("Error generating announcement with Groq:", error)
-      throw new Error(`Failed to generate announcement content: ${error.message}`)
-    }
+    return completion.choices[0]?.message?.content || "Failed to generate announcement"
+  } catch (error) {
+    console.error("Error generating announcement with Groq:", error)
+    throw error
   }
-
-  return Promise.race([generateContent(), timeout])
 }
 
 // Helper function to send emails
@@ -160,7 +155,7 @@ async function sendEmails(subject, content, emails) {
     return true
   } catch (error) {
     console.error("Error sending emails:", error)
-    throw new Error("Failed to send emails")
+    throw error
   }
 }
 
@@ -184,194 +179,183 @@ export default {
     .setDMPermission(false),
 
   async execute(interaction) {
-    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-      return interaction.reply({
-        content: "You do not have permission to create announcements.",
+    // Respond IMMEDIATELY to prevent timeout
+    try {
+      await interaction.reply({
+        content: "⏳ Processing your request...",
         flags: 64,
+      })
+    } catch (error) {
+      console.error("Failed to send initial response:", error)
+      return
+    }
+
+    // Check permissions after responding
+    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
+      return interaction.editReply({
+        content: "❌ You do not have permission to create announcements.",
       })
     }
 
     const subcommand = interaction.options.getSubcommand()
 
-    try {
-      switch (subcommand) {
-        case "create": {
-          // Respond immediately to prevent timeout
-          await interaction.reply({
-            content: "🤖 Generating announcement with AI... This may take a moment.",
-            flags: 64,
-          })
+    if (subcommand === "create") {
+      const topic = interaction.options.getString("topic")
+      const details = interaction.options.getString("details") || ""
 
-          const topic = interaction.options.getString("topic")
-          const details = interaction.options.getString("details") || ""
-
-          try {
-            // Generate announcement content
-            const generatedContent = await generateAnnouncement(topic, details)
-
-            // Parse the generated content
-            const discordMatch = generatedContent.match(/\*\*Discord Announcement:\*\*\s*\n"([^"]+)"/)
-            const emailMatch = generatedContent.match(
-              /\*\*Email Announcement:\*\*\s*\n\nSubject: ([^\n]+)\n\n([\s\S]+?)(?=\n\nBest,|$)/,
-            )
-
-            if (!discordMatch || !emailMatch) {
-              throw new Error("Failed to parse generated content. Please try again.")
-            }
-
-            const discordContent = discordMatch[1]
-            const emailSubject = emailMatch[1]
-            const emailContent = emailMatch[2] + "\n\nBest,\nEngineering Club Execs"
-
-            // Store the announcement for editing
-            const announcementId = Date.now().toString()
-            pendingAnnouncements.set(announcementId, {
-              discordContent,
-              emailSubject,
-              emailContent,
-              createdBy: interaction.user.id,
-              createdAt: new Date(),
-            })
-
-            // Create action buttons
-            const row = new ActionRowBuilder().addComponents(
-              new ButtonBuilder()
-                .setCustomId(`edit_discord_${announcementId}`)
-                .setLabel("Edit Discord")
-                .setStyle(ButtonStyle.Primary)
-                .setEmoji("💬"),
-              new ButtonBuilder()
-                .setCustomId(`edit_email_${announcementId}`)
-                .setLabel("Edit Email")
-                .setStyle(ButtonStyle.Primary)
-                .setEmoji("📧"),
-              new ButtonBuilder()
-                .setCustomId(`send_announcement_${announcementId}`)
-                .setLabel("Send Both")
-                .setStyle(ButtonStyle.Success)
-                .setEmoji("🚀"),
-              new ButtonBuilder()
-                .setCustomId(`cancel_announcement_${announcementId}`)
-                .setLabel("Cancel")
-                .setStyle(ButtonStyle.Danger)
-                .setEmoji("❌"),
-            )
-
-            await interaction.editReply({
-              content: null,
-              embeds: [
-                {
-                  title: "📢 Generated Announcement Preview",
-                  fields: [
-                    {
-                      name: "💬 Discord Announcement",
-                      value: `\`\`\`${discordContent}\`\`\``,
-                      inline: false,
-                    },
-                    {
-                      name: "📧 Email Subject",
-                      value: `\`\`\`${emailSubject}\`\`\``,
-                      inline: false,
-                    },
-                    {
-                      name: "📧 Email Content (Preview)",
-                      value: `\`\`\`${emailContent.substring(0, 500)}${emailContent.length > 500 ? "..." : ""}\`\`\``,
-                      inline: false,
-                    },
-                  ],
-                  color: 0x00ff00,
-                  footer: { text: "Use the buttons below to edit or send the announcements" },
-                },
-              ],
-              components: [row],
-            })
-          } catch (error) {
-            await interaction.editReply({
-              content: `❌ Error generating announcement: ${error.message}`,
-              embeds: [],
-              components: [],
-            })
-          }
-          break
-        }
-
-        case "test-emails": {
-          // Respond immediately to prevent timeout
-          await interaction.reply({
-            content: "📊 Testing email connection... Please wait.",
-            flags: 64,
-          })
-
-          try {
-            const emails = await getClubEmails()
-            const sheetName = getCurrentSheetName()
-
-            await interaction.editReply({
-              content: null,
-              embeds: [
-                {
-                  title: "📊 Email List Test Results",
-                  fields: [
-                    { name: "Sheet Name", value: sheetName, inline: false },
-                    { name: "Emails Found", value: emails.length.toString(), inline: true },
-                    {
-                      name: "Sample Emails",
-                      value: emails.length > 0 ? emails.slice(0, 5).join("\n") : "No emails found",
-                      inline: false,
-                    },
-                  ],
-                  color: emails.length > 0 ? 0x00ff00 : 0xff0000,
-                  footer: {
-                    text:
-                      emails.length > 0
-                        ? "✅ Email connection successful!"
-                        : "❌ No emails found. Check your Google Sheets setup.",
-                  },
-                },
-              ],
-            })
-          } catch (error) {
-            await interaction.editReply({
-              content: null,
-              embeds: [
-                {
-                  title: "❌ Email Test Failed",
-                  description: `Error: ${error.message}`,
-                  fields: [
-                    {
-                      name: "Possible Solutions",
-                      value:
-                        "• Enable Google Sheets API\n• Check environment variables\n• Verify service account permissions",
-                      inline: false,
-                    },
-                  ],
-                  color: 0xff0000,
-                },
-              ],
-            })
-          }
-          break
-        }
-      }
-    } catch (error) {
-      console.error("Announce command error:", error)
-
-      // Try to respond if we haven't already
       try {
-        if (!interaction.replied && !interaction.deferred) {
-          await interaction.reply({
-            content: `❌ Command failed: ${error.message}`,
-            flags: 64,
-          })
-        } else if (interaction.deferred) {
-          await interaction.editReply({
-            content: `❌ Command failed: ${error.message}`,
-            embeds: [],
-            components: [],
-          })
+        await interaction.editReply({
+          content: "🤖 Generating announcement with AI...",
+        })
+
+        // Generate announcement content
+        const generatedContent = await generateAnnouncement(topic, details)
+
+        // Parse the generated content
+        const discordMatch = generatedContent.match(/\*\*Discord Announcement:\*\*\s*\n"([^"]+)"/)
+        const emailMatch = generatedContent.match(
+          /\*\*Email Announcement:\*\*\s*\n\nSubject: ([^\n]+)\n\n([\s\S]+?)(?=\n\nBest,|$)/,
+        )
+
+        if (!discordMatch || !emailMatch) {
+          throw new Error("Failed to parse AI-generated content")
         }
-      } catch (replyError) {
-        console.error("Failed to send error response:", replyError)
+
+        const discordContent = discordMatch[1]
+        const emailSubject = emailMatch[1]
+        const emailContent = emailMatch[2] + "\n\nBest,\nEngineering Club Execs"
+
+        // Store the announcement for editing
+        const announcementId = Date.now().toString()
+        pendingAnnouncements.set(announcementId, {
+          discordContent,
+          emailSubject,
+          emailContent,
+          createdBy: interaction.user.id,
+          createdAt: new Date(),
+        })
+
+        // Create action buttons
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`edit_discord_${announcementId}`)
+            .setLabel("Edit Discord")
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji("💬"),
+          new ButtonBuilder()
+            .setCustomId(`edit_email_${announcementId}`)
+            .setLabel("Edit Email")
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji("📧"),
+          new ButtonBuilder()
+            .setCustomId(`send_announcement_${announcementId}`)
+            .setLabel("Send Both")
+            .setStyle(ButtonStyle.Success)
+            .setEmoji("🚀"),
+          new ButtonBuilder()
+            .setCustomId(`cancel_announcement_${announcementId}`)
+            .setLabel("Cancel")
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji("❌"),
+        )
+
+        await interaction.editReply({
+          content: null,
+          embeds: [
+            {
+              title: "📢 Generated Announcement Preview",
+              fields: [
+                {
+                  name: "💬 Discord Announcement",
+                  value: `\`\`\`${discordContent}\`\`\``,
+                  inline: false,
+                },
+                {
+                  name: "📧 Email Subject",
+                  value: `\`\`\`${emailSubject}\`\`\``,
+                  inline: false,
+                },
+                {
+                  name: "📧 Email Content (Preview)",
+                  value: `\`\`\`${emailContent.substring(0, 500)}${emailContent.length > 500 ? "..." : ""}\`\`\``,
+                  inline: false,
+                },
+              ],
+              color: 0x00ff00,
+              footer: { text: "Use the buttons below to edit or send the announcements" },
+            },
+          ],
+          components: [row],
+        })
+      } catch (error) {
+        console.error("Error in create subcommand:", error)
+        await interaction.editReply({
+          content: `❌ Error generating announcement: ${error.message}`,
+        })
+      }
+    } else if (subcommand === "test-emails") {
+      try {
+        await interaction.editReply({
+          content: "📊 Testing Google Sheets connection...",
+        })
+
+        const emails = await getClubEmails()
+        const sheetName = getCurrentSheetName()
+
+        await interaction.editReply({
+          content: null,
+          embeds: [
+            {
+              title: "📊 Email List Test Results",
+              fields: [
+                { name: "Sheet Name", value: sheetName, inline: false },
+                { name: "Emails Found", value: emails.length.toString(), inline: true },
+                {
+                  name: "Sample Emails",
+                  value: emails.length > 0 ? emails.slice(0, 5).join("\n") : "No emails found",
+                  inline: false,
+                },
+                {
+                  name: "Environment Check",
+                  value: `Sheets ID: ${process.env.GOOGLE_SHEETS_ID ? "✅" : "❌"}\nClient Email: ${process.env.GOOGLE_CLIENT_EMAIL ? "✅" : "❌"}\nPrivate Key: ${process.env.GOOGLE_PRIVATE_KEY ? "✅" : "❌"}`,
+                  inline: false,
+                },
+              ],
+              color: emails.length > 0 ? 0x00ff00 : 0xff0000,
+              footer: {
+                text:
+                  emails.length > 0
+                    ? "✅ Email connection successful!"
+                    : "❌ Check Google Sheets API and environment variables",
+              },
+            },
+          ],
+        })
+      } catch (error) {
+        console.error("Error in test-emails subcommand:", error)
+        await interaction.editReply({
+          content: null,
+          embeds: [
+            {
+              title: "❌ Email Test Failed",
+              description: `Error: ${error.message}`,
+              fields: [
+                {
+                  name: "Common Issues",
+                  value:
+                    "• Google Sheets API not enabled\n• Invalid service account credentials\n• Wrong sheet name or ID\n• Missing environment variables",
+                  inline: false,
+                },
+                {
+                  name: "Current Sheet Name",
+                  value: getCurrentSheetName(),
+                  inline: false,
+                },
+              ],
+              color: 0xff0000,
+            },
+          ],
+        })
       }
     }
   },
@@ -448,7 +432,7 @@ export default {
 
         case "send": {
           await interaction.reply({
-            content: "🚀 Sending announcements... Please wait.",
+            content: "🚀 Sending announcements...",
             flags: 64,
           })
 
@@ -520,17 +504,6 @@ export default {
       }
     } catch (error) {
       console.error("Button interaction error:", error)
-
-      try {
-        if (!interaction.replied && !interaction.deferred) {
-          await interaction.reply({
-            content: `❌ Error: ${error.message}`,
-            flags: 64,
-          })
-        }
-      } catch (replyError) {
-        console.error("Failed to send button error response:", replyError)
-      }
     }
   },
 
