@@ -13,6 +13,9 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "fs": "^0.0.1-security",
-    "node-fetch": "^2.7.0"
+    "googleapis": "^150.0.1",
+    "groq-sdk": "^0.3.3",
+    "node-fetch": "^2.7.0",
+    "nodemailer": "^7.0.3"
   }
 }
