@@ -127,7 +127,7 @@ Keep the Discord announcement concise and exciting. Make the email more detailed
 // Helper function to send emails
 async function sendEmails(subject, content, emails) {
   try {
-    const transporter = nodemailer.createTransporter({
+    const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
         user: process.env.EMAIL_FROM,
@@ -173,7 +173,7 @@ export default {
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
       return interaction.reply({
         content: "You do not have permission to create announcements.",
-        ephemeral: true,
+        flags: 64,
       })
     }
 
@@ -182,7 +182,7 @@ export default {
     try {
       switch (subcommand) {
         case "create": {
-          await interaction.deferReply({ ephemeral: true })
+          await interaction.deferReply({ flags: 64 })
 
           const topic = interaction.options.getString("topic")
           const details = interaction.options.getString("details") || ""
@@ -269,7 +269,7 @@ export default {
         }
 
         case "test-emails": {
-          await interaction.deferReply({ ephemeral: true })
+          await interaction.deferReply({ flags: 64 })
 
           const emails = await getClubEmails()
           const sheetName = getCurrentSheetName()
@@ -303,7 +303,7 @@ export default {
       } else {
         await interaction.reply({
           content: `❌ Error: ${errorMessage}`,
-          ephemeral: true,
+          flags: 64,
         })
       }
     }
@@ -319,7 +319,7 @@ export default {
     if (!announcement) {
       return interaction.reply({
         content: "This announcement has expired or been removed.",
-        ephemeral: true,
+        flags: 64,
       })
     }
 
@@ -330,7 +330,7 @@ export default {
     ) {
       return interaction.reply({
         content: "You can only edit announcements you created.",
-        ephemeral: true,
+        flags: 64,
       })
     }
 
@@ -380,7 +380,7 @@ export default {
         }
 
         case "send": {
-          await interaction.deferReply({ ephemeral: true })
+          await interaction.deferReply({ flags: 64 })
 
           // Get club emails
           const emails = await getClubEmails()
@@ -447,7 +447,7 @@ export default {
       } else {
         await interaction.reply({
           content: `❌ Error: ${errorMessage}`,
-          ephemeral: true,
+          flags: 64,
         })
       }
     }
@@ -461,7 +461,7 @@ export default {
     if (!announcement) {
       return interaction.reply({
         content: "This announcement has expired or been removed.",
-        ephemeral: true,
+        flags: 64,
       })
     }
 
@@ -532,7 +532,7 @@ export default {
       console.error("Modal submit error:", error)
       await interaction.reply({
         content: `❌ Error updating announcement: ${error.message}`,
-        ephemeral: true,
+        flags: 64,
       })
     }
   },
