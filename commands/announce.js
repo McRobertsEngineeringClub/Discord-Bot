@@ -251,22 +251,32 @@ export default {
   async execute(interaction) {
     console.log(`Announce command executed by ${interaction.user.tag}`)
 
-    // Respond IMMEDIATELY to prevent timeout
-    try {
-      await interaction.reply({
-        content: "⏳ Processing your request...",
-        ephemeral: true,
-      })
-      console.log("Initial reply sent successfully")
-    } catch (error) {
-      console.error("Failed to send initial response:", error)
-      return
+    // Track if we've already responded to avoid the 10062 error
+    let hasResponded = false
+
+    // Function to safely respond to the interaction
+    const safeReply = async (options) => {
+      if (hasResponded) {
+        try {
+          return await interaction.editReply(options)
+        } catch (error) {
+          console.error("Error editing reply:", error)
+        }
+      } else {
+        try {
+          await interaction.deferReply({ ephemeral: true })
+          hasResponded = true
+          return await interaction.editReply(options)
+        } catch (error) {
+          console.error("Error in initial reply:", error)
+        }
+      }
     }
 
-    // Check permissions after responding
+    // Check permissions
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
       console.log("User lacks permissions")
-      return interaction.editReply({
+      return safeReply({
         content: "❌ You do not have permission to create announcements.",
       })
     }
@@ -280,7 +290,7 @@ export default {
       console.log(`Topic: ${topic}, Details: ${details}`)
 
       try {
-        await interaction.editReply({
+        await safeReply({
           content: "🤖 Generating announcement with AI...",
         })
 
@@ -352,7 +362,7 @@ export default {
             .setEmoji("❌"),
         )
 
-        await interaction.editReply({
+        await safeReply({
           content: null,
           embeds: [
             {
@@ -384,13 +394,13 @@ export default {
         console.log("Successfully sent announcement preview")
       } catch (error) {
         console.error("Error in create subcommand:", error)
-        await interaction.editReply({
+        await safeReply({
           content: `❌ Error generating announcement: ${error.message}\n\nPlease check:\n- Groq API key is configured\n- Bot has proper permissions\n- Try again in a few moments`,
         })
       }
     } else if (subcommand === "test-emails") {
       try {
-        await interaction.editReply({
+        await safeReply({
           content: "📊 Testing Google Sheets connection...",
         })
 
@@ -401,7 +411,7 @@ export default {
 
         console.log(`Found ${emails.length} emails from sheet: ${actualSheetName}`)
 
-        await interaction.editReply({
+        await safeReply({
           content: null,
           embeds: [
             {
@@ -432,7 +442,7 @@ export default {
         })
       } catch (error) {
         console.error("Error in test-emails subcommand:", error)
-        await interaction.editReply({
+        await safeReply({
           content: null,
           embeds: [
             {
@@ -458,7 +468,7 @@ export default {
       }
     } else if (subcommand === "list-sheets") {
       try {
-        await interaction.editReply({
+        await safeReply({
           content: "📋 Fetching all available sheets...",
         })
 
@@ -488,7 +498,7 @@ export default {
         const sheetNames = spreadsheet.data.sheets.map((sheet) => sheet.properties.title)
         console.log("Found sheets:", sheetNames)
 
-        await interaction.editReply({
+        await safeReply({
           content: null,
           embeds: [
             {
@@ -512,15 +522,14 @@ export default {
         })
       } catch (error) {
         console.error("Error listing sheets:", error)
-        await interaction.editReply({
+        await safeReply({
           content: `❌ Error listing sheets: ${error.message}`,
         })
       }
     }
-
-    // Handle button interactions
   },
 
+  // Handle button interactions
   async handleButtonInteraction(interaction) {
     const [action, type, announcementId] = interaction.customId.split("_")
 
@@ -530,7 +539,7 @@ export default {
     if (!announcement) {
       return interaction.reply({
         content: "This announcement has expired or been removed.",
-        flags: 64,
+        ephemeral: true,
       })
     }
 
@@ -541,7 +550,7 @@ export default {
     ) {
       return interaction.reply({
         content: "You can only edit announcements you created.",
-        flags: 64,
+        ephemeral: true,
       })
     }
 
@@ -593,7 +602,7 @@ export default {
         case "send": {
           await interaction.reply({
             content: "🚀 Sending announcements...",
-            flags: 64,
+            ephemeral: true,
           })
 
           try {
@@ -665,6 +674,14 @@ export default {
       }
     } catch (error) {
       console.error("Button interaction error:", error)
+      try {
+        await interaction.reply({
+          content: `Error: ${error.message}`,
+          ephemeral: true,
+        })
+      } catch (replyError) {
+        console.error("Failed to send error message:", replyError)
+      }
     }
   },
 
@@ -676,7 +693,7 @@ export default {
     if (!announcement) {
       return interaction.reply({
         content: "This announcement has expired or been removed.",
-        flags: 64,
+        ephemeral: true,
       })
     }
 
@@ -747,7 +764,7 @@ export default {
       console.error("Modal submit error:", error)
       await interaction.reply({
         content: `❌ Error updating announcement: ${error.message}`,
-        flags: 64,
+        ephemeral: true,
       })
     }
   },
