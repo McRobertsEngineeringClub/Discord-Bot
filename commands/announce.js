@@ -12,9 +12,13 @@ import Groq from "groq-sdk"
 import { google } from "googleapis"
 import nodemailer from "nodemailer"
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-})
+// Initialize Groq only if API key exists
+let groq = null
+if (process.env.GROQ_API_KEY) {
+  groq = new Groq({
+    apiKey: process.env.GROQ_API_KEY,
+  })
+}
 
 // Store pending announcements
 const pendingAnnouncements = new Map()
@@ -35,6 +39,7 @@ function getCurrentSheetName() {
 // Helper function to find the correct sheet name by searching all sheets
 async function findCorrectSheetName(sheets, spreadsheetId) {
   try {
+    console.log("Finding correct sheet name...")
     // Get all sheet names from the spreadsheet
     const spreadsheet = await sheets.spreadsheets.get({
       spreadsheetId: spreadsheetId,
@@ -67,10 +72,14 @@ async function findCorrectSheetName(sheets, spreadsheetId) {
 // Helper function to get emails from Google Sheets
 async function getClubEmails() {
   try {
+    console.log("Starting getClubEmails function...")
+
     // Check if required environment variables exist
     if (!process.env.GOOGLE_SHEETS_ID || !process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
       throw new Error("Missing Google Sheets environment variables")
     }
+
+    console.log("Environment variables check passed")
 
     const auth = new google.auth.GoogleAuth({
       credentials: {
@@ -88,7 +97,10 @@ async function getClubEmails() {
       scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
     })
 
+    console.log("Google Auth created")
+
     const sheets = google.sheets({ version: "v4", auth })
+    console.log("Google Sheets client created")
 
     // Find the correct sheet name dynamically
     const sheetName = await findCorrectSheetName(sheets, process.env.GOOGLE_SHEETS_ID)
@@ -99,10 +111,14 @@ async function getClubEmails() {
       range: `'${sheetName}'!B:B`, // Column B contains emails - wrapped in quotes for special characters
     })
 
+    console.log("Got response from Google Sheets")
+
     const emails = response.data.values
       ?.flat()
       .filter((email) => email && email.includes("@"))
       .filter((email, index, arr) => arr.indexOf(email) === index) // Remove duplicates
+
+    console.log(`Found ${emails?.length || 0} emails`)
 
     return { emails: emails || [], sheetName }
   } catch (error) {
@@ -114,8 +130,11 @@ async function getClubEmails() {
 // Helper function to generate announcement content using Groq
 async function generateAnnouncement(topic, additionalInfo = "") {
   try {
-    if (!process.env.GROQ_API_KEY) {
-      throw new Error("Missing Groq API key")
+    console.log("Starting generateAnnouncement function...")
+
+    if (!groq) {
+      console.log("Groq not initialized, using fallback")
+      throw new Error("Groq API not available")
     }
 
     console.log("Generating announcement with Groq...")
@@ -151,7 +170,12 @@ Engineering Club Execs
 
 Keep the Discord announcement concise and exciting. Make the email more detailed and professional. Use engineering/tech emojis appropriately.`
 
-    const completion = await groq.chat.completions.create({
+    // Add timeout to Groq API call
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Groq API timeout")), 15000) // 15 second timeout
+    })
+
+    const groqPromise = groq.chat.completions.create({
       messages: [
         {
           role: "user",
@@ -163,7 +187,9 @@ Keep the Discord announcement concise and exciting. Make the email more detailed
       max_tokens: 1000,
     })
 
+    const completion = await Promise.race([groqPromise, timeoutPromise])
     const result = completion.choices[0]?.message?.content
+
     console.log("Groq API response received")
 
     if (!result) {
@@ -175,6 +201,7 @@ Keep the Discord announcement concise and exciting. Make the email more detailed
     console.error("Error generating announcement with Groq:", error)
 
     // Return a fallback response instead of throwing
+    console.log("Using fallback announcement content")
     return `**Discord Announcement:**
 "@everyone 🚨 **${topic}** 🚨 ${additionalInfo || "Important announcement from Engineering Club!"} 🔧⚡"
 
@@ -205,6 +232,8 @@ Engineering Club Execs`
 // Helper function to send emails
 async function sendEmails(subject, content, emails) {
   try {
+    console.log("Starting sendEmails function...")
+
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
@@ -221,6 +250,7 @@ async function sendEmails(subject, content, emails) {
       html: content.replace(/\n/g, "<br>").replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>"),
     })
 
+    console.log("Emails sent successfully")
     return true
   } catch (error) {
     console.error("Error sending emails:", error)
@@ -249,60 +279,46 @@ export default {
     .setDMPermission(false),
 
   async execute(interaction) {
-    console.log(`Announce command executed by ${interaction.user.tag}`)
+    console.log(`=== ANNOUNCE COMMAND START ===`)
+    console.log(`Executed by: ${interaction.user.tag}`)
+    console.log(`Subcommand: ${interaction.options.getSubcommand()}`)
 
-    // Track if we've already responded to avoid the 10062 error
-    let hasResponded = false
-
-    // Function to safely respond to the interaction
-    const safeReply = async (options) => {
-      if (hasResponded) {
-        try {
-          return await interaction.editReply(options)
-        } catch (error) {
-          console.error("Error editing reply:", error)
-        }
-      } else {
-        try {
-          await interaction.deferReply({ ephemeral: true })
-          hasResponded = true
-          return await interaction.editReply(options)
-        } catch (error) {
-          console.error("Error in initial reply:", error)
-        }
-      }
+    try {
+      // Defer the reply immediately
+      await interaction.deferReply({ ephemeral: true })
+      console.log("Deferred reply sent successfully")
+    } catch (error) {
+      console.error("Failed to defer reply:", error)
+      return
     }
 
     // Check permissions
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
       console.log("User lacks permissions")
-      return safeReply({
+      return interaction.editReply({
         content: "❌ You do not have permission to create announcements.",
       })
     }
 
     const subcommand = interaction.options.getSubcommand()
-    console.log(`Subcommand: ${subcommand}`)
 
-    if (subcommand === "create") {
-      const topic = interaction.options.getString("topic")
-      const details = interaction.options.getString("details") || ""
-      console.log(`Topic: ${topic}, Details: ${details}`)
+    try {
+      if (subcommand === "create") {
+        console.log("Processing CREATE subcommand")
 
-      try {
-        await safeReply({
+        const topic = interaction.options.getString("topic")
+        const details = interaction.options.getString("details") || ""
+        console.log(`Topic: "${topic}", Details: "${details}"`)
+
+        await interaction.editReply({
           content: "🤖 Generating announcement with AI...",
         })
+        console.log("Updated reply with generating message")
 
-        // Check if Groq API key exists
-        if (!process.env.GROQ_API_KEY) {
-          throw new Error("Groq API key not configured")
-        }
-
-        console.log("Calling Groq API...")
-        // Generate announcement content
+        // Generate announcement content with timeout
+        console.log("About to call generateAnnouncement...")
         const generatedContent = await generateAnnouncement(topic, details)
-        console.log("Generated content received:", generatedContent.substring(0, 100) + "...")
+        console.log("Generated content received, length:", generatedContent.length)
 
         // Parse the generated content with better error handling
         const discordMatch = generatedContent.match(/\*\*Discord Announcement:\*\*\s*\n"([^"]+)"/)
@@ -319,12 +335,11 @@ export default {
           emailSubject = `🛠️ Engineering Club: ${topic}`
           emailContent = `Dear Engineering Club Members,\n\nWe have an important announcement about: ${topic}\n\n${details || "More details will be provided soon."}\n\nHere's what you need to know:\n- **When:** TBD\n- **Where:** Electronics room\n- **What to bring:** TBD\n\nStay tuned for more information!\n\nBest,\nEngineering Club Execs`
         } else {
+          console.log("Successfully parsed AI content")
           discordContent = discordMatch[1]
           emailSubject = emailMatch[1]
           emailContent = emailMatch[2] + "\n\nBest,\nEngineering Club Execs"
         }
-
-        console.log("Parsed content successfully")
 
         // Store the announcement for editing
         const announcementId = Date.now().toString()
@@ -362,7 +377,9 @@ export default {
             .setEmoji("❌"),
         )
 
-        await safeReply({
+        console.log("About to send final reply with embed...")
+
+        await interaction.editReply({
           content: null,
           embeds: [
             {
@@ -392,26 +409,20 @@ export default {
         })
 
         console.log("Successfully sent announcement preview")
-      } catch (error) {
-        console.error("Error in create subcommand:", error)
-        await safeReply({
-          content: `❌ Error generating announcement: ${error.message}\n\nPlease check:\n- Groq API key is configured\n- Bot has proper permissions\n- Try again in a few moments`,
-        })
-      }
-    } else if (subcommand === "test-emails") {
-      try {
-        await safeReply({
+      } else if (subcommand === "test-emails") {
+        console.log("Processing TEST-EMAILS subcommand")
+
+        await interaction.editReply({
           content: "📊 Testing Google Sheets connection...",
         })
 
-        console.log("Testing email connection...")
         const result = await getClubEmails()
         const emails = result.emails
         const actualSheetName = result.sheetName
 
         console.log(`Found ${emails.length} emails from sheet: ${actualSheetName}`)
 
-        await safeReply({
+        await interaction.editReply({
           content: null,
           embeds: [
             {
@@ -440,39 +451,12 @@ export default {
             },
           ],
         })
-      } catch (error) {
-        console.error("Error in test-emails subcommand:", error)
-        await safeReply({
-          content: null,
-          embeds: [
-            {
-              title: "❌ Email Test Failed",
-              description: `Error: ${error.message}`,
-              fields: [
-                {
-                  name: "Common Issues",
-                  value:
-                    "• Google Sheets API not enabled\n• Invalid service account credentials\n• Wrong sheet name or ID\n• Missing environment variables",
-                  inline: false,
-                },
-                {
-                  name: "Expected Sheet Name",
-                  value: getCurrentSheetName(),
-                  inline: false,
-                },
-              ],
-              color: 0xff0000,
-            },
-          ],
-        })
-      }
-    } else if (subcommand === "list-sheets") {
-      try {
-        await safeReply({
+      } else if (subcommand === "list-sheets") {
+        console.log("Processing LIST-SHEETS subcommand")
+
+        await interaction.editReply({
           content: "📋 Fetching all available sheets...",
         })
-
-        console.log("Listing sheets...")
 
         const auth = new google.auth.GoogleAuth({
           credentials: {
@@ -498,7 +482,7 @@ export default {
         const sheetNames = spreadsheet.data.sheets.map((sheet) => sheet.properties.title)
         console.log("Found sheets:", sheetNames)
 
-        await safeReply({
+        await interaction.editReply({
           content: null,
           embeds: [
             {
@@ -520,17 +504,29 @@ export default {
             },
           ],
         })
-      } catch (error) {
-        console.error("Error listing sheets:", error)
-        await safeReply({
-          content: `❌ Error listing sheets: ${error.message}`,
-        })
       }
+
+      console.log(`=== ANNOUNCE COMMAND END (SUCCESS) ===`)
+    } catch (error) {
+      console.error("Error in announce command execution:", error)
+      console.error("Error stack:", error.stack)
+
+      try {
+        await interaction.editReply({
+          content: `❌ Error: ${error.message}\n\nPlease check the logs and try again.`,
+        })
+      } catch (replyError) {
+        console.error("Failed to send error reply:", replyError)
+      }
+
+      console.log(`=== ANNOUNCE COMMAND END (ERROR) ===`)
     }
   },
 
   // Handle button interactions
   async handleButtonInteraction(interaction) {
+    console.log("Button interaction received:", interaction.customId)
+
     const [action, type, announcementId] = interaction.customId.split("_")
 
     if (action !== "edit" && action !== "send" && action !== "cancel") return
@@ -687,6 +683,8 @@ export default {
 
   // Handle modal submissions
   async handleModalSubmit(interaction) {
+    console.log("Modal submission received:", interaction.customId)
+
     const [type, , , announcementId] = interaction.customId.split("_")
 
     const announcement = pendingAnnouncements.get(announcementId)
