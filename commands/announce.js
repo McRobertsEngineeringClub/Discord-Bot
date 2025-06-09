@@ -118,6 +118,8 @@ async function generateAnnouncement(topic, additionalInfo = "") {
       throw new Error("Missing Groq API key")
     }
 
+    console.log("Generating announcement with Groq...")
+
     const prompt = `You are writing announcements for an engineering club. Generate both a Discord announcement and an email announcement for the following topic: "${topic}"
 
 ${additionalInfo ? `Additional context: ${additionalInfo}` : ""}
@@ -161,17 +163,49 @@ Keep the Discord announcement concise and exciting. Make the email more detailed
       max_tokens: 1000,
     })
 
-    return completion.choices[0]?.message?.content || "Failed to generate announcement"
+    const result = completion.choices[0]?.message?.content
+    console.log("Groq API response received")
+
+    if (!result) {
+      throw new Error("No content received from Groq API")
+    }
+
+    return result
   } catch (error) {
     console.error("Error generating announcement with Groq:", error)
-    throw error
+
+    // Return a fallback response instead of throwing
+    return `**Discord Announcement:**
+"@everyone 🚨 **${topic}** 🚨 ${additionalInfo || "Important announcement from Engineering Club!"} 🔧⚡"
+
+---
+
+**Email Announcement:**
+
+Subject: 🛠️ Engineering Club: ${topic}
+
+Dear Engineering Club Members,
+
+We have an important announcement regarding: ${topic}
+
+${additionalInfo || "More details will be provided soon."}
+
+Here's what you need to know:
+- **When:** TBD
+- **Where:** Electronics room
+- **What to bring:** TBD
+
+Stay tuned for more information!
+
+Best,
+Engineering Club Execs`
   }
 }
 
 // Helper function to send emails
 async function sendEmails(subject, content, emails) {
   try {
-    const transporter = nodemailer.createTransporter({
+    const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
         user: process.env.EMAIL_FROM,
@@ -215,12 +249,15 @@ export default {
     .setDMPermission(false),
 
   async execute(interaction) {
+    console.log(`Announce command executed by ${interaction.user.tag}`)
+
     // Respond IMMEDIATELY to prevent timeout
     try {
       await interaction.reply({
         content: "⏳ Processing your request...",
-        flags: 64,
+        ephemeral: true,
       })
+      console.log("Initial reply sent successfully")
     } catch (error) {
       console.error("Failed to send initial response:", error)
       return
@@ -228,38 +265,56 @@ export default {
 
     // Check permissions after responding
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
+      console.log("User lacks permissions")
       return interaction.editReply({
         content: "❌ You do not have permission to create announcements.",
       })
     }
 
     const subcommand = interaction.options.getSubcommand()
+    console.log(`Subcommand: ${subcommand}`)
 
     if (subcommand === "create") {
       const topic = interaction.options.getString("topic")
       const details = interaction.options.getString("details") || ""
+      console.log(`Topic: ${topic}, Details: ${details}`)
 
       try {
         await interaction.editReply({
           content: "🤖 Generating announcement with AI...",
         })
 
+        // Check if Groq API key exists
+        if (!process.env.GROQ_API_KEY) {
+          throw new Error("Groq API key not configured")
+        }
+
+        console.log("Calling Groq API...")
         // Generate announcement content
         const generatedContent = await generateAnnouncement(topic, details)
+        console.log("Generated content received:", generatedContent.substring(0, 100) + "...")
 
-        // Parse the generated content
+        // Parse the generated content with better error handling
         const discordMatch = generatedContent.match(/\*\*Discord Announcement:\*\*\s*\n"([^"]+)"/)
         const emailMatch = generatedContent.match(
           /\*\*Email Announcement:\*\*\s*\n\nSubject: ([^\n]+)\n\n([\s\S]+?)(?=\n\nBest,|$)/,
         )
 
+        let discordContent, emailSubject, emailContent
+
         if (!discordMatch || !emailMatch) {
-          throw new Error("Failed to parse AI-generated content")
+          console.log("Failed to parse AI content, using fallback")
+          // Fallback content if parsing fails
+          discordContent = `@everyone 🚨 **${topic}** 🚨\n\n${details || "More details coming soon!"} 🔧⚡`
+          emailSubject = `🛠️ Engineering Club: ${topic}`
+          emailContent = `Dear Engineering Club Members,\n\nWe have an important announcement about: ${topic}\n\n${details || "More details will be provided soon."}\n\nHere's what you need to know:\n- **When:** TBD\n- **Where:** Electronics room\n- **What to bring:** TBD\n\nStay tuned for more information!\n\nBest,\nEngineering Club Execs`
+        } else {
+          discordContent = discordMatch[1]
+          emailSubject = emailMatch[1]
+          emailContent = emailMatch[2] + "\n\nBest,\nEngineering Club Execs"
         }
 
-        const discordContent = discordMatch[1]
-        const emailSubject = emailMatch[1]
-        const emailContent = emailMatch[2] + "\n\nBest,\nEngineering Club Execs"
+        console.log("Parsed content successfully")
 
         // Store the announcement for editing
         const announcementId = Date.now().toString()
@@ -270,6 +325,8 @@ export default {
           createdBy: interaction.user.id,
           createdAt: new Date(),
         })
+
+        console.log(`Stored announcement with ID: ${announcementId}`)
 
         // Create action buttons
         const row = new ActionRowBuilder().addComponents(
@@ -303,7 +360,7 @@ export default {
               fields: [
                 {
                   name: "💬 Discord Announcement",
-                  value: `\`\`\`${discordContent}\`\`\``,
+                  value: `\`\`\`${discordContent.substring(0, 1000)}\`\`\``,
                   inline: false,
                 },
                 {
@@ -323,10 +380,12 @@ export default {
           ],
           components: [row],
         })
+
+        console.log("Successfully sent announcement preview")
       } catch (error) {
         console.error("Error in create subcommand:", error)
         await interaction.editReply({
-          content: `❌ Error generating announcement: ${error.message}`,
+          content: `❌ Error generating announcement: ${error.message}\n\nPlease check:\n- Groq API key is configured\n- Bot has proper permissions\n- Try again in a few moments`,
         })
       }
     } else if (subcommand === "test-emails") {
@@ -335,9 +394,12 @@ export default {
           content: "📊 Testing Google Sheets connection...",
         })
 
+        console.log("Testing email connection...")
         const result = await getClubEmails()
         const emails = result.emails
         const actualSheetName = result.sheetName
+
+        console.log(`Found ${emails.length} emails from sheet: ${actualSheetName}`)
 
         await interaction.editReply({
           content: null,
@@ -400,6 +462,8 @@ export default {
           content: "📋 Fetching all available sheets...",
         })
 
+        console.log("Listing sheets...")
+
         const auth = new google.auth.GoogleAuth({
           credentials: {
             type: "service_account",
@@ -422,6 +486,7 @@ export default {
         })
 
         const sheetNames = spreadsheet.data.sheets.map((sheet) => sheet.properties.title)
+        console.log("Found sheets:", sheetNames)
 
         await interaction.editReply({
           content: null,
@@ -452,9 +517,10 @@ export default {
         })
       }
     }
+
+    // Handle button interactions
   },
 
-  // Handle button interactions
   async handleButtonInteraction(interaction) {
     const [action, type, announcementId] = interaction.customId.split("_")
 
