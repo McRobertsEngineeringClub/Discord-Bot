@@ -95,19 +95,7 @@ async function generateAnnouncementAsync(topic, details, webhookUrl) {
       throw new Error("Groq API key not configured")
     }
 
-    // Use the correct Groq API endpoint
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "llama-3.1-70b-versatile", // Use a more reliable model
-        messages: [
-          {
-            role: "user",
-            content: `Generate both a Discord announcement and an email announcement for: "${topic}"
+    const prompt = `Generate both a Discord announcement and an email announcement for: "${topic}"
 
 ${details ? `Additional context: ${details}` : ""}
 
@@ -134,29 +122,80 @@ Here's what you need to know:
 [Closing]
 
 Best,
-Engineering Club Execs`,
-          },
-        ],
+Engineering Club Execs`
+
+    const aiMessages = [{ role: "user", content: prompt }]
+
+    console.log("Calling Groq API with model: llama-3.1-70b-versatile")
+
+    // Call Groq API with primary model
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "llama-3.1-70b-versatile", // Primary model
+        messages: aiMessages,
         temperature: 0.7,
-        max_tokens: 1000,
+        max_tokens: 1500,
+        top_p: 0.9,
+        stream: false,
       }),
     })
 
+    console.log("Groq API response status:", response.status)
+
     if (!response.ok) {
       const errorText = await response.text()
-      console.error("API Error Response:", errorText)
-      throw new Error(`API request failed: ${response.status} - ${errorText}`)
+      console.error("Groq API error:", response.status, errorText)
+
+      // Try with a different model if the first one fails
+      console.log("Trying with alternative model: llama3-8b-8192")
+
+      const fallbackResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "llama3-8b-8192", // Alternative model
+          messages: aiMessages,
+          temperature: 0.7,
+          max_tokens: 1500,
+          top_p: 0.9,
+          stream: false,
+        }),
+      })
+
+      if (!fallbackResponse.ok) {
+        const fallbackErrorText = await fallbackResponse.text()
+        console.error("Fallback model also failed:", fallbackResponse.status, fallbackErrorText)
+        throw new Error(`Both AI models failed: ${response.status} and ${fallbackResponse.status}`)
+      }
+
+      const fallbackData = await fallbackResponse.json()
+      if (!fallbackData.choices || !fallbackData.choices[0] || !fallbackData.choices[0].message) {
+        throw new Error("Invalid fallback AI response structure")
+      }
+
+      const responseContent = fallbackData.choices[0].message.content
+      console.log("Fallback model response received successfully")
+      return responseContent
     }
 
     const data = await response.json()
-    const generatedContent = data.choices[0]?.message?.content
 
-    if (!generatedContent) {
-      throw new Error("No content generated")
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      console.error("Invalid Groq response structure:", data)
+      throw new Error("Invalid AI response structure")
     }
 
-    console.log("AI generation successful")
-    return generatedContent
+    const responseContent = data.choices[0].message.content
+    console.log("Primary model response received successfully")
+    return responseContent
   } catch (error) {
     console.error("Error in async generation:", error)
 
@@ -192,7 +231,7 @@ Engineering Club Execs`
 // Helper function to send emails
 async function sendEmails(subject, content, emails) {
   try {
-    const transporter = nodemailer.createTransporter({
+    const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
         user: process.env.EMAIL_FROM,
