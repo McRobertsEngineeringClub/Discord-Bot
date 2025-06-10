@@ -91,7 +91,10 @@ async function sendEmails(subject, content, emails) {
       throw new Error("Email credentials not configured")
     }
 
-    const transporter = nodemailer.createTransporter({
+    console.log(`Setting up email with: ${process.env.EMAIL_FROM.substring(0, 3)}...`)
+
+    // FIXED: createTransport instead of createTransporter
+    const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
         user: process.env.EMAIL_FROM,
@@ -99,9 +102,12 @@ async function sendEmails(subject, content, emails) {
       },
     })
 
+    console.log("Testing email connection...")
     // Test the connection first
     await transporter.verify()
+    console.log("Email connection verified!")
 
+    console.log(`Sending email to ${emails.length} recipients...`)
     await transporter.sendMail({
       from: `"Engineering Club" <${process.env.EMAIL_FROM}>`,
       bcc: emails.join(","),
@@ -109,10 +115,11 @@ async function sendEmails(subject, content, emails) {
       text: content,
       html: content.replace(/\n/g, "<br>").replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>"),
     })
+    console.log("Email sent successfully!")
 
     return true
   } catch (error) {
-    console.error("Email error:", error)
+    console.error("Email error details:", error)
     throw error
   }
 }
@@ -131,6 +138,9 @@ export default {
         ),
     )
     .addSubcommand((subcommand) => subcommand.setName("test-emails").setDescription("Test email connection"))
+    .addSubcommand((subcommand) =>
+      subcommand.setName("test-email-auth").setDescription("Test email authentication only"),
+    )
     .addSubcommand((subcommand) => subcommand.setName("list-sheets").setDescription("List available sheets"))
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
     .setDMPermission(false),
@@ -264,6 +274,52 @@ export default {
         } catch (error) {
           console.error("Test emails error:", error)
           await interaction.editReply(`❌ Error: ${error.message}`)
+        }
+      } else if (subcommand === "test-email-auth") {
+        await interaction.deferReply({ ephemeral: true })
+
+        try {
+          if (!process.env.EMAIL_FROM || !process.env.EMAIL_PASSWORD) {
+            throw new Error("Email credentials not configured")
+          }
+
+          console.log("Testing email authentication...")
+          const transporter = nodemailer.createTransport({
+            service: "gmail",
+            auth: {
+              user: process.env.EMAIL_FROM,
+              pass: process.env.EMAIL_PASSWORD,
+            },
+          })
+
+          await transporter.verify()
+
+          await interaction.editReply({
+            content: null,
+            embeds: [
+              {
+                title: "✅ Email Authentication Successful",
+                description: `Successfully authenticated with ${process.env.EMAIL_FROM}`,
+                color: 0x00ff00,
+              },
+            ],
+          })
+        } catch (error) {
+          console.error("Email auth error:", error)
+          await interaction.editReply({
+            content: null,
+            embeds: [
+              {
+                title: "❌ Email Authentication Failed",
+                description: `Error: ${error.message}`,
+                fields: [
+                  { name: "Email Address", value: process.env.EMAIL_FROM || "Not set", inline: true },
+                  { name: "Password", value: process.env.EMAIL_PASSWORD ? "Set (hidden)" : "Not set", inline: true },
+                ],
+                color: 0xff0000,
+              },
+            ],
+          })
         }
       } else if (subcommand === "list-sheets") {
         await interaction.deferReply({ ephemeral: true })
