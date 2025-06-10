@@ -27,59 +27,35 @@ const pendingAnnouncements = new Map()
 function getCurrentSheetName() {
   const now = new Date()
   const currentYear = now.getFullYear()
-  const currentMonth = now.getMonth() // 0-based (0 = January)
-
-  // If it's before September (month 8), we're still in the previous academic year
+  const currentMonth = now.getMonth()
   const academicStartYear = currentMonth >= 8 ? currentYear : currentYear - 1
   const academicEndYear = academicStartYear + 1
-
   return `${academicStartYear}/${academicEndYear} Engineering Club Sign Up Sheet  (Responses)`
 }
 
-// Helper function to find the correct sheet name by searching all sheets
+// Helper function to find the correct sheet name
 async function findCorrectSheetName(sheets, spreadsheetId) {
   try {
-    console.log("Finding correct sheet name...")
-    // Get all sheet names from the spreadsheet
-    const spreadsheet = await sheets.spreadsheets.get({
-      spreadsheetId: spreadsheetId,
-    })
-
+    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId })
     const sheetNames = spreadsheet.data.sheets.map((sheet) => sheet.properties.title)
-    console.log("Available sheets:", sheetNames)
 
-    // Look for a sheet that contains "Engineering Club Sign Up" and "Responses"
     const targetSheet = sheetNames.find(
       (name) => name.includes("Engineering Club Sign Up") && name.includes("Responses") && name.includes("2024/2025"),
     )
 
-    if (targetSheet) {
-      console.log("Found matching sheet:", targetSheet)
-      return targetSheet
-    }
-
-    // If no exact match, try the current year pattern
-    const currentYearPattern = getCurrentSheetName()
-    const fallbackSheet = sheetNames.find((name) => name.includes("2024/2025"))
-
-    return fallbackSheet || sheetNames[0] // Return first sheet as last resort
+    return targetSheet || sheetNames.find((name) => name.includes("2024/2025")) || sheetNames[0]
   } catch (error) {
     console.error("Error finding sheet name:", error)
-    return getCurrentSheetName() // Fallback to generated name
+    return getCurrentSheetName()
   }
 }
 
 // Helper function to get emails from Google Sheets
 async function getClubEmails() {
   try {
-    console.log("Starting getClubEmails function...")
-
-    // Check if required environment variables exist
     if (!process.env.GOOGLE_SHEETS_ID || !process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
       throw new Error("Missing Google Sheets environment variables")
     }
-
-    console.log("Environment variables check passed")
 
     const auth = new google.auth.GoogleAuth({
       credentials: {
@@ -97,113 +73,78 @@ async function getClubEmails() {
       scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
     })
 
-    console.log("Google Auth created")
-
     const sheets = google.sheets({ version: "v4", auth })
-    console.log("Google Sheets client created")
-
-    // Find the correct sheet name dynamically
     const sheetName = await findCorrectSheetName(sheets, process.env.GOOGLE_SHEETS_ID)
-    console.log("Using sheet name:", sheetName)
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEETS_ID,
-      range: `'${sheetName}'!B:B`, // Column B contains emails - wrapped in quotes for special characters
+      range: `'${sheetName}'!B:B`,
     })
-
-    console.log("Got response from Google Sheets")
 
     const emails = response.data.values
       ?.flat()
       .filter((email) => email && email.includes("@"))
-      .filter((email, index, arr) => arr.indexOf(email) === index) // Remove duplicates
-
-    console.log(`Found ${emails?.length || 0} emails`)
+      .filter((email, index, arr) => arr.indexOf(email) === index)
 
     return { emails: emails || [], sheetName }
   } catch (error) {
-    console.error("Error fetching emails from Google Sheets:", error)
+    console.error("Error fetching emails:", error)
     throw error
   }
 }
 
-// Helper function to generate announcement content using Groq
+// Helper function to generate announcement content
 async function generateAnnouncement(topic, additionalInfo = "") {
   try {
-    console.log("Starting generateAnnouncement function...")
-
     if (!groq) {
-      console.log("Groq not initialized, using fallback")
       throw new Error("Groq API not available")
     }
 
-    console.log("Generating announcement with Groq...")
-
-    const prompt = `You are writing announcements for an engineering club. Generate both a Discord announcement and an email announcement for the following topic: "${topic}"
+    const prompt = `Generate both a Discord announcement and an email announcement for: "${topic}"
 
 ${additionalInfo ? `Additional context: ${additionalInfo}` : ""}
 
-Format your response EXACTLY like this:
+Format EXACTLY like this:
 
 **Discord Announcement:**
-"@everyone 🚨 **[Your announcement title]** 🚨 [Your announcement content with emojis] 🔧⚡"
+"@everyone 🚨 **[Title]** 🚨 [Content with emojis] 🔧⚡"
 
 ---
 
 **Email Announcement:**
 
-Subject: 🛠️ Engineering Club: [Your subject line]
+Subject: 🛠️ Engineering Club: [Subject]
 
 Dear Engineering Club Members,
 
-[Your email content - make it professional but engaging, include relevant details about timing, location (Electronics room), what to bring, etc.]
+[Professional email content]
 
 Here's what you need to know:
-- **When:** [Include timing details]
+- **When:** [Details]
 - **Where:** Electronics room
 - **What to bring:** [If applicable]
 
-[Closing paragraph encouraging participation]
+[Closing]
 
 Best,
-Engineering Club Execs
+Engineering Club Execs`
 
-Keep the Discord announcement concise and exciting. Make the email more detailed and professional. Use engineering/tech emojis appropriately.`
+    const completion = await Promise.race([
+      groq.chat.completions.create({
+        messages: [{ role: "user", content: prompt }],
+        model: "deepseek-r1-distill-llama-70b",
+        temperature: 0.7,
+        max_tokens: 1000,
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 10000)),
+    ])
 
-    // Add timeout to Groq API call
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("Groq API timeout")), 15000) // 15 second timeout
-    })
-
-    const groqPromise = groq.chat.completions.create({
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-      model: "deepseek-r1-distill-llama-70b",
-      temperature: 0.7,
-      max_tokens: 1000,
-    })
-
-    const completion = await Promise.race([groqPromise, timeoutPromise])
-    const result = completion.choices[0]?.message?.content
-
-    console.log("Groq API response received")
-
-    if (!result) {
-      throw new Error("No content received from Groq API")
-    }
-
-    return result
+    return completion.choices[0]?.message?.content || "Failed to generate"
   } catch (error) {
-    console.error("Error generating announcement with Groq:", error)
-
-    // Return a fallback response instead of throwing
-    console.log("Using fallback announcement content")
+    console.error("Groq error:", error)
+    // Fallback content
     return `**Discord Announcement:**
-"@everyone 🚨 **${topic}** 🚨 ${additionalInfo || "Important announcement from Engineering Club!"} 🔧⚡"
+"@everyone 🚨 **${topic}** 🚨 ${additionalInfo || "Important announcement!"} 🔧⚡"
 
 ---
 
@@ -213,16 +154,9 @@ Subject: 🛠️ Engineering Club: ${topic}
 
 Dear Engineering Club Members,
 
-We have an important announcement regarding: ${topic}
+${topic}
 
-${additionalInfo || "More details will be provided soon."}
-
-Here's what you need to know:
-- **When:** TBD
-- **Where:** Electronics room
-- **What to bring:** TBD
-
-Stay tuned for more information!
+${additionalInfo || "More details coming soon."}
 
 Best,
 Engineering Club Execs`
@@ -232,13 +166,11 @@ Engineering Club Execs`
 // Helper function to send emails
 async function sendEmails(subject, content, emails) {
   try {
-    console.log("Starting sendEmails function...")
-
-    const transporter = nodemailer.createTransport({
+    const transporter = nodemailer.createTransporter({
       service: "gmail",
       auth: {
         user: process.env.EMAIL_FROM,
-        pass: process.env.EMAIL_PASSWORD, // App-specific password
+        pass: process.env.EMAIL_PASSWORD,
       },
     })
 
@@ -250,10 +182,9 @@ async function sendEmails(subject, content, emails) {
       html: content.replace(/\n/g, "<br>").replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>"),
     })
 
-    console.log("Emails sent successfully")
     return true
   } catch (error) {
-    console.error("Error sending emails:", error)
+    console.error("Email error:", error)
     throw error
   }
 }
@@ -261,66 +192,52 @@ async function sendEmails(subject, content, emails) {
 export default {
   data: new SlashCommandBuilder()
     .setName("announce")
-    .setDescription("Create AI-generated announcements for Discord and email")
+    .setDescription("Create announcements for Discord and email")
     .addSubcommand((subcommand) =>
       subcommand
         .setName("create")
         .setDescription("Generate a new announcement")
+        .addStringOption((option) => option.setName("topic").setDescription("The main topic/event").setRequired(true))
         .addStringOption((option) =>
-          option.setName("topic").setDescription("The main topic/event for the announcement").setRequired(true),
-        )
-        .addStringOption((option) =>
-          option.setName("details").setDescription("Additional details or context (optional)").setRequired(false),
+          option.setName("details").setDescription("Additional details (optional)").setRequired(false),
         ),
     )
-    .addSubcommand((subcommand) => subcommand.setName("test-emails").setDescription("Test email list connection"))
-    .addSubcommand((subcommand) => subcommand.setName("list-sheets").setDescription("List all available sheets"))
+    .addSubcommand((subcommand) => subcommand.setName("test-emails").setDescription("Test email connection"))
+    .addSubcommand((subcommand) => subcommand.setName("list-sheets").setDescription("List available sheets"))
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
     .setDMPermission(false),
 
   async execute(interaction) {
-    console.log(`=== ANNOUNCE COMMAND START ===`)
-    console.log(`Executed by: ${interaction.user.tag}`)
-    console.log(`Subcommand: ${interaction.options.getSubcommand()}`)
+    console.log(`Announce command: ${interaction.options.getSubcommand()} by ${interaction.user.tag}`)
 
+    // Respond immediately
     try {
-      // Defer the reply immediately
-      await interaction.deferReply({ ephemeral: true })
-      console.log("Deferred reply sent successfully")
+      await interaction.reply({
+        content: "⏳ Processing...",
+        ephemeral: true,
+      })
     } catch (error) {
-      console.error("Failed to defer reply:", error)
+      console.error("Failed to reply:", error)
       return
     }
 
     // Check permissions
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-      console.log("User lacks permissions")
-      return interaction.editReply({
-        content: "❌ You do not have permission to create announcements.",
-      })
+      return interaction.editReply("❌ No permission to create announcements.")
     }
 
     const subcommand = interaction.options.getSubcommand()
 
     try {
       if (subcommand === "create") {
-        console.log("Processing CREATE subcommand")
-
         const topic = interaction.options.getString("topic")
         const details = interaction.options.getString("details") || ""
-        console.log(`Topic: "${topic}", Details: "${details}"`)
 
-        await interaction.editReply({
-          content: "🤖 Generating announcement with AI...",
-        })
-        console.log("Updated reply with generating message")
+        await interaction.editReply("🤖 Generating announcement...")
 
-        // Generate announcement content with timeout
-        console.log("About to call generateAnnouncement...")
         const generatedContent = await generateAnnouncement(topic, details)
-        console.log("Generated content received, length:", generatedContent.length)
 
-        // Parse the generated content with better error handling
+        // Parse content
         const discordMatch = generatedContent.match(/\*\*Discord Announcement:\*\*\s*\n"([^"]+)"/)
         const emailMatch = generatedContent.match(
           /\*\*Email Announcement:\*\*\s*\n\nSubject: ([^\n]+)\n\n([\s\S]+?)(?=\n\nBest,|$)/,
@@ -329,19 +246,17 @@ export default {
         let discordContent, emailSubject, emailContent
 
         if (!discordMatch || !emailMatch) {
-          console.log("Failed to parse AI content, using fallback")
-          // Fallback content if parsing fails
+          // Fallback
           discordContent = `@everyone 🚨 **${topic}** 🚨\n\n${details || "More details coming soon!"} 🔧⚡`
           emailSubject = `🛠️ Engineering Club: ${topic}`
-          emailContent = `Dear Engineering Club Members,\n\nWe have an important announcement about: ${topic}\n\n${details || "More details will be provided soon."}\n\nHere's what you need to know:\n- **When:** TBD\n- **Where:** Electronics room\n- **What to bring:** TBD\n\nStay tuned for more information!\n\nBest,\nEngineering Club Execs`
+          emailContent = `Dear Engineering Club Members,\n\n${topic}\n\n${details || "More details coming soon."}\n\nBest,\nEngineering Club Execs`
         } else {
-          console.log("Successfully parsed AI content")
           discordContent = discordMatch[1]
           emailSubject = emailMatch[1]
           emailContent = emailMatch[2] + "\n\nBest,\nEngineering Club Execs"
         }
 
-        // Store the announcement for editing
+        // Store announcement
         const announcementId = Date.now().toString()
         pendingAnnouncements.set(announcementId, {
           discordContent,
@@ -351,9 +266,7 @@ export default {
           createdAt: new Date(),
         })
 
-        console.log(`Stored announcement with ID: ${announcementId}`)
-
-        // Create action buttons
+        // Create buttons
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId(`edit_discord_${announcementId}`)
@@ -377,16 +290,14 @@ export default {
             .setEmoji("❌"),
         )
 
-        console.log("About to send final reply with embed...")
-
         await interaction.editReply({
           content: null,
           embeds: [
             {
-              title: "📢 Generated Announcement Preview",
+              title: "📢 Announcement Preview",
               fields: [
                 {
-                  name: "💬 Discord Announcement",
+                  name: "💬 Discord",
                   value: `\`\`\`${discordContent.substring(0, 1000)}\`\`\``,
                   inline: false,
                 },
@@ -396,67 +307,43 @@ export default {
                   inline: false,
                 },
                 {
-                  name: "📧 Email Content (Preview)",
+                  name: "📧 Email Content",
                   value: `\`\`\`${emailContent.substring(0, 500)}${emailContent.length > 500 ? "..." : ""}\`\`\``,
                   inline: false,
                 },
               ],
               color: 0x00ff00,
-              footer: { text: "Use the buttons below to edit or send the announcements" },
             },
           ],
           components: [row],
         })
-
-        console.log("Successfully sent announcement preview")
       } else if (subcommand === "test-emails") {
-        console.log("Processing TEST-EMAILS subcommand")
-
-        await interaction.editReply({
-          content: "📊 Testing Google Sheets connection...",
-        })
+        await interaction.editReply("📊 Testing email connection...")
 
         const result = await getClubEmails()
         const emails = result.emails
-        const actualSheetName = result.sheetName
-
-        console.log(`Found ${emails.length} emails from sheet: ${actualSheetName}`)
+        const sheetName = result.sheetName
 
         await interaction.editReply({
           content: null,
           embeds: [
             {
-              title: "📊 Email List Test Results",
+              title: "📊 Email Test Results",
               fields: [
-                { name: "Actual Sheet Name", value: actualSheetName, inline: false },
+                { name: "Sheet Name", value: sheetName, inline: false },
                 { name: "Emails Found", value: emails.length.toString(), inline: true },
                 {
                   name: "Sample Emails",
                   value: emails.length > 0 ? emails.slice(0, 5).join("\n") : "No emails found",
                   inline: false,
                 },
-                {
-                  name: "Environment Check",
-                  value: `Sheets ID: ${process.env.GOOGLE_SHEETS_ID ? "✅" : "❌"}\nClient Email: ${process.env.GOOGLE_CLIENT_EMAIL ? "✅" : "❌"}\nPrivate Key: ${process.env.GOOGLE_PRIVATE_KEY ? "✅" : "❌"}`,
-                  inline: false,
-                },
               ],
               color: emails.length > 0 ? 0x00ff00 : 0xff0000,
-              footer: {
-                text:
-                  emails.length > 0
-                    ? "✅ Email connection successful!"
-                    : "❌ Check Google Sheets API and environment variables",
-              },
             },
           ],
         })
       } else if (subcommand === "list-sheets") {
-        console.log("Processing LIST-SHEETS subcommand")
-
-        await interaction.editReply({
-          content: "📋 Fetching all available sheets...",
-        })
+        await interaction.editReply("📋 Fetching sheets...")
 
         const auth = new google.auth.GoogleAuth({
           credentials: {
@@ -480,7 +367,6 @@ export default {
         })
 
         const sheetNames = spreadsheet.data.sheets.map((sheet) => sheet.properties.title)
-        console.log("Found sheets:", sheetNames)
 
         await interaction.editReply({
           content: null,
@@ -489,44 +375,22 @@ export default {
               title: "📋 Available Sheets",
               description: sheetNames.map((name, index) => `${index + 1}. ${name}`).join("\n"),
               fields: [
-                {
-                  name: "Total Sheets",
-                  value: sheetNames.length.toString(),
-                  inline: true,
-                },
-                {
-                  name: "Expected Pattern",
-                  value: getCurrentSheetName(),
-                  inline: false,
-                },
+                { name: "Total Sheets", value: sheetNames.length.toString(), inline: true },
+                { name: "Expected Pattern", value: getCurrentSheetName(), inline: false },
               ],
               color: 0x0099ff,
             },
           ],
         })
       }
-
-      console.log(`=== ANNOUNCE COMMAND END (SUCCESS) ===`)
     } catch (error) {
-      console.error("Error in announce command execution:", error)
-      console.error("Error stack:", error.stack)
-
-      try {
-        await interaction.editReply({
-          content: `❌ Error: ${error.message}\n\nPlease check the logs and try again.`,
-        })
-      } catch (replyError) {
-        console.error("Failed to send error reply:", replyError)
-      }
-
-      console.log(`=== ANNOUNCE COMMAND END (ERROR) ===`)
+      console.error("Command error:", error)
+      await interaction.editReply(`❌ Error: ${error.message}`)
     }
   },
 
   // Handle button interactions
   async handleButtonInteraction(interaction) {
-    console.log("Button interaction received:", interaction.customId)
-
     const [action, type, announcementId] = interaction.customId.split("_")
 
     if (action !== "edit" && action !== "send" && action !== "cancel") return
@@ -534,18 +398,17 @@ export default {
     const announcement = pendingAnnouncements.get(announcementId)
     if (!announcement) {
       return interaction.reply({
-        content: "This announcement has expired or been removed.",
+        content: "This announcement has expired.",
         ephemeral: true,
       })
     }
 
-    // Check if user is the creator or has manage messages permission
     if (
       announcement.createdBy !== interaction.user.id &&
       !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)
     ) {
       return interaction.reply({
-        content: "You can only edit announcements you created.",
+        content: "You can only edit your own announcements.",
         ephemeral: true,
       })
     }
@@ -560,7 +423,7 @@ export default {
 
             const textInput = new TextInputBuilder()
               .setCustomId("discord_content")
-              .setLabel("Discord Announcement Content")
+              .setLabel("Discord Content")
               .setStyle(TextInputStyle.Paragraph)
               .setValue(announcement.discordContent)
               .setMaxLength(2000)
@@ -602,11 +465,11 @@ export default {
           })
 
           try {
-            // Get club emails
+            // Get emails
             const result = await getClubEmails()
             const emails = result.emails
             if (emails.length === 0) {
-              throw new Error("No club member emails found")
+              throw new Error("No emails found")
             }
 
             // Send Discord announcement
@@ -616,24 +479,20 @@ export default {
             }
 
             await announcementChannel.send(announcement.discordContent)
-
-            // Send emails
             await sendEmails(announcement.emailSubject, announcement.emailContent, emails)
 
-            // Clean up
             pendingAnnouncements.delete(announcementId)
 
-            await interaction.editReply({
-              content: `✅ Announcements sent successfully!\n📱 Discord: Posted to ${announcementChannel.name}\n📧 Email: Sent to ${emails.length} members`,
-            })
+            await interaction.editReply(
+              `✅ Sent!\n📱 Discord: ${announcementChannel.name}\n📧 Email: ${emails.length} members`,
+            )
 
-            // Update the original message to show it was sent
             try {
               await interaction.message.edit({
                 embeds: [
                   {
                     title: "✅ Announcement Sent",
-                    description: "This announcement has been successfully sent to Discord and email.",
+                    description: "Successfully sent to Discord and email.",
                     color: 0x00ff00,
                     timestamp: new Date(),
                   },
@@ -641,24 +500,21 @@ export default {
                 components: [],
               })
             } catch (editError) {
-              console.log("Could not edit original message:", editError.message)
+              console.log("Could not edit original message")
             }
           } catch (error) {
-            await interaction.editReply({
-              content: `❌ Error sending announcements: ${error.message}`,
-            })
+            await interaction.editReply(`❌ Error: ${error.message}`)
           }
           break
         }
 
         case "cancel": {
           pendingAnnouncements.delete(announcementId)
-
           await interaction.update({
             embeds: [
               {
-                title: "❌ Announcement Cancelled",
-                description: "The announcement has been cancelled and will not be sent.",
+                title: "❌ Cancelled",
+                description: "Announcement cancelled.",
                 color: 0xff0000,
                 timestamp: new Date(),
               },
@@ -669,28 +525,18 @@ export default {
         }
       }
     } catch (error) {
-      console.error("Button interaction error:", error)
-      try {
-        await interaction.reply({
-          content: `Error: ${error.message}`,
-          ephemeral: true,
-        })
-      } catch (replyError) {
-        console.error("Failed to send error message:", replyError)
-      }
+      console.error("Button error:", error)
     }
   },
 
   // Handle modal submissions
   async handleModalSubmit(interaction) {
-    console.log("Modal submission received:", interaction.customId)
-
     const [type, , , announcementId] = interaction.customId.split("_")
 
     const announcement = pendingAnnouncements.get(announcementId)
     if (!announcement) {
       return interaction.reply({
-        content: "This announcement has expired or been removed.",
+        content: "Announcement expired.",
         ephemeral: true,
       })
     }
@@ -703,10 +549,8 @@ export default {
         announcement.emailContent = interaction.fields.getTextInputValue("email_content")
       }
 
-      // Update the stored announcement
       pendingAnnouncements.set(announcementId, announcement)
 
-      // Create updated action buttons
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`edit_discord_${announcementId}`)
@@ -730,14 +574,13 @@ export default {
           .setEmoji("❌"),
       )
 
-      // Update the original message with new content
       await interaction.update({
         embeds: [
           {
-            title: "📢 Updated Announcement Preview",
+            title: "📢 Updated Preview",
             fields: [
               {
-                name: "💬 Discord Announcement",
+                name: "💬 Discord",
                 value: `\`\`\`${announcement.discordContent}\`\`\``,
                 inline: false,
               },
@@ -747,21 +590,20 @@ export default {
                 inline: false,
               },
               {
-                name: "📧 Email Content (Preview)",
+                name: "📧 Email Content",
                 value: `\`\`\`${announcement.emailContent.substring(0, 500)}${announcement.emailContent.length > 500 ? "..." : ""}\`\`\``,
                 inline: false,
               },
             ],
             color: 0x00ff00,
-            footer: { text: "Updated! Use the buttons below to edit further or send the announcements" },
           },
         ],
         components: [row],
       })
     } catch (error) {
-      console.error("Modal submit error:", error)
+      console.error("Modal error:", error)
       await interaction.reply({
-        content: `❌ Error updating announcement: ${error.message}`,
+        content: `❌ Error: ${error.message}`,
         ephemeral: true,
       })
     }
