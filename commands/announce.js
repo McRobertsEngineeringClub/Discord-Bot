@@ -8,17 +8,9 @@ import {
   TextInputBuilder,
   TextInputStyle,
 } from "discord.js"
-import Groq from "groq-sdk"
 import { google } from "googleapis"
 import nodemailer from "nodemailer"
-
-// Initialize Groq only if API key exists
-let groq = null
-if (process.env.GROQ_API_KEY) {
-  groq = new Groq({
-    apiKey: process.env.GROQ_API_KEY,
-  })
-}
+import fetch from "node-fetch"
 
 // Store pending announcements
 const pendingAnnouncements = new Map()
@@ -93,16 +85,26 @@ async function getClubEmails() {
   }
 }
 
-// Helper function to generate announcement content
-async function generateAnnouncement(topic, additionalInfo = "") {
+// Helper function to generate announcement using external API
+async function generateAnnouncementAsync(topic, details, webhookUrl) {
   try {
-    if (!groq) {
-      throw new Error("Groq API not available")
-    }
+    console.log("Sending async request to generate announcement...")
 
-    const prompt = `Generate both a Discord announcement and an email announcement for: "${topic}"
+    // Send request to external service (you can use any API service)
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "deepseek-r1-distill-llama-70b",
+        messages: [
+          {
+            role: "user",
+            content: `Generate both a Discord announcement and an email announcement for: "${topic}"
 
-${additionalInfo ? `Additional context: ${additionalInfo}` : ""}
+${details ? `Additional context: ${details}` : ""}
 
 Format EXACTLY like this:
 
@@ -127,24 +129,64 @@ Here's what you need to know:
 [Closing]
 
 Best,
-Engineering Club Execs`
-
-    const completion = await Promise.race([
-      groq.chat.completions.create({
-        messages: [{ role: "user", content: prompt }],
-        model: "deepseek-r1-distill-llama-70b",
+Engineering Club Execs`,
+          },
+        ],
         temperature: 0.7,
         max_tokens: 1000,
       }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 10000)),
-    ])
+    })
 
-    return completion.choices[0]?.message?.content || "Failed to generate"
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status}`)
+    }
+
+    const data = await response.json()
+    const generatedContent = data.choices[0]?.message?.content
+
+    if (!generatedContent) {
+      throw new Error("No content generated")
+    }
+
+    // Send result back to Discord via webhook
+    await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: null,
+        embeds: [
+          {
+            title: "🤖 AI Generation Complete!",
+            description: "Your announcement has been generated. Processing...",
+            color: 0x00ff00,
+          },
+        ],
+      }),
+    })
+
+    return generatedContent
   } catch (error) {
-    console.error("Groq error:", error)
-    // Fallback content
+    console.error("Error in async generation:", error)
+
+    // Send error back via webhook
+    await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: null,
+        embeds: [
+          {
+            title: "⚠️ Using Fallback Content",
+            description: "AI generation failed, using basic template.",
+            color: 0xffaa00,
+          },
+        ],
+      }),
+    })
+
+    // Return fallback content
     return `**Discord Announcement:**
-"@everyone 🚨 **${topic}** 🚨 ${additionalInfo || "Important announcement!"} 🔧⚡"
+"@everyone 🚨 **${topic}** 🚨 ${details || "Important announcement!"} 🔧⚡"
 
 ---
 
@@ -156,7 +198,7 @@ Dear Engineering Club Members,
 
 ${topic}
 
-${additionalInfo || "More details coming soon."}
+${details || "More details coming soon."}
 
 Best,
 Engineering Club Execs`
@@ -210,116 +252,149 @@ export default {
   async execute(interaction) {
     console.log(`Announce command: ${interaction.options.getSubcommand()} by ${interaction.user.tag}`)
 
-    // Respond immediately
-    try {
-      await interaction.reply({
-        content: "⏳ Processing...",
+    // Check permissions first
+    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
+      return interaction.reply({
+        content: "❌ No permission to create announcements.",
         ephemeral: true,
       })
-    } catch (error) {
-      console.error("Failed to reply:", error)
-      return
-    }
-
-    // Check permissions
-    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-      return interaction.editReply("❌ No permission to create announcements.")
     }
 
     const subcommand = interaction.options.getSubcommand()
 
-    try {
-      if (subcommand === "create") {
-        const topic = interaction.options.getString("topic")
-        const details = interaction.options.getString("details") || ""
+    if (subcommand === "create") {
+      const topic = interaction.options.getString("topic")
+      const details = interaction.options.getString("details") || ""
 
-        await interaction.editReply("🤖 Generating announcement...")
+      // Respond immediately with a webhook URL for updates
+      const webhookResponse = await interaction.reply({
+        content:
+          "🚀 **Announcement Generation Started!**\n\n⏳ Generating AI content in the background...\n📝 This may take 10-30 seconds",
+        ephemeral: true,
+        wait: true,
+      })
 
-        const generatedContent = await generateAnnouncement(topic, details)
+      // Get the webhook URL for this interaction
+      const webhookUrl = `https://discord.com/api/v10/webhooks/${interaction.applicationId}/${interaction.token}`
 
-        // Parse content
-        const discordMatch = generatedContent.match(/\*\*Discord Announcement:\*\*\s*\n"([^"]+)"/)
-        const emailMatch = generatedContent.match(
-          /\*\*Email Announcement:\*\*\s*\n\nSubject: ([^\n]+)\n\n([\s\S]+?)(?=\n\nBest,|$)/,
-        )
+      // Start async processing
+      setTimeout(async () => {
+        try {
+          console.log("Starting async announcement generation...")
 
-        let discordContent, emailSubject, emailContent
+          const generatedContent = await generateAnnouncementAsync(topic, details, webhookUrl)
 
-        if (!discordMatch || !emailMatch) {
-          // Fallback
-          discordContent = `@everyone 🚨 **${topic}** 🚨\n\n${details || "More details coming soon!"} 🔧⚡`
-          emailSubject = `🛠️ Engineering Club: ${topic}`
-          emailContent = `Dear Engineering Club Members,\n\n${topic}\n\n${details || "More details coming soon."}\n\nBest,\nEngineering Club Execs`
-        } else {
-          discordContent = discordMatch[1]
-          emailSubject = emailMatch[1]
-          emailContent = emailMatch[2] + "\n\nBest,\nEngineering Club Execs"
-        }
+          // Parse content
+          const discordMatch = generatedContent.match(/\*\*Discord Announcement:\*\*\s*\n"([^"]+)"/)
+          const emailMatch = generatedContent.match(
+            /\*\*Email Announcement:\*\*\s*\n\nSubject: ([^\n]+)\n\n([\s\S]+?)(?=\n\nBest,|$)/,
+          )
 
-        // Store announcement
-        const announcementId = Date.now().toString()
-        pendingAnnouncements.set(announcementId, {
-          discordContent,
-          emailSubject,
-          emailContent,
-          createdBy: interaction.user.id,
-          createdAt: new Date(),
-        })
+          let discordContent, emailSubject, emailContent
 
-        // Create buttons
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`edit_discord_${announcementId}`)
-            .setLabel("Edit Discord")
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji("💬"),
-          new ButtonBuilder()
-            .setCustomId(`edit_email_${announcementId}`)
-            .setLabel("Edit Email")
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji("📧"),
-          new ButtonBuilder()
-            .setCustomId(`send_announcement_${announcementId}`)
-            .setLabel("Send Both")
-            .setStyle(ButtonStyle.Success)
-            .setEmoji("🚀"),
-          new ButtonBuilder()
-            .setCustomId(`cancel_announcement_${announcementId}`)
-            .setLabel("Cancel")
-            .setStyle(ButtonStyle.Danger)
-            .setEmoji("❌"),
-        )
+          if (!discordMatch || !emailMatch) {
+            // Fallback
+            discordContent = `@everyone 🚨 **${topic}** 🚨\n\n${details || "More details coming soon!"} 🔧⚡`
+            emailSubject = `🛠️ Engineering Club: ${topic}`
+            emailContent = `Dear Engineering Club Members,\n\n${topic}\n\n${details || "More details coming soon."}\n\nBest,\nEngineering Club Execs`
+          } else {
+            discordContent = discordMatch[1]
+            emailSubject = emailMatch[1]
+            emailContent = emailMatch[2] + "\n\nBest,\nEngineering Club Execs"
+          }
 
-        await interaction.editReply({
-          content: null,
-          embeds: [
-            {
-              title: "📢 Announcement Preview",
-              fields: [
+          // Store announcement
+          const announcementId = Date.now().toString()
+          pendingAnnouncements.set(announcementId, {
+            discordContent,
+            emailSubject,
+            emailContent,
+            createdBy: interaction.user.id,
+            createdAt: new Date(),
+          })
+
+          // Create buttons
+          const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`edit_discord_${announcementId}`)
+              .setLabel("Edit Discord")
+              .setStyle(ButtonStyle.Primary)
+              .setEmoji("💬"),
+            new ButtonBuilder()
+              .setCustomId(`edit_email_${announcementId}`)
+              .setLabel("Edit Email")
+              .setStyle(ButtonStyle.Primary)
+              .setEmoji("📧"),
+            new ButtonBuilder()
+              .setCustomId(`send_announcement_${announcementId}`)
+              .setLabel("Send Both")
+              .setStyle(ButtonStyle.Success)
+              .setEmoji("🚀"),
+            new ButtonBuilder()
+              .setCustomId(`cancel_announcement_${announcementId}`)
+              .setLabel("Cancel")
+              .setStyle(ButtonStyle.Danger)
+              .setEmoji("❌"),
+          )
+
+          // Update the original message with the final result
+          await fetch(webhookUrl, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              content: null,
+              embeds: [
                 {
-                  name: "💬 Discord",
-                  value: `\`\`\`${discordContent.substring(0, 1000)}\`\`\``,
-                  inline: false,
-                },
-                {
-                  name: "📧 Email Subject",
-                  value: `\`\`\`${emailSubject}\`\`\``,
-                  inline: false,
-                },
-                {
-                  name: "📧 Email Content",
-                  value: `\`\`\`${emailContent.substring(0, 500)}${emailContent.length > 500 ? "..." : ""}\`\`\``,
-                  inline: false,
+                  title: "📢 Announcement Ready!",
+                  fields: [
+                    {
+                      name: "💬 Discord",
+                      value: `\`\`\`${discordContent.substring(0, 1000)}\`\`\``,
+                      inline: false,
+                    },
+                    {
+                      name: "📧 Email Subject",
+                      value: `\`\`\`${emailSubject}\`\`\``,
+                      inline: false,
+                    },
+                    {
+                      name: "📧 Email Content",
+                      value: `\`\`\`${emailContent.substring(0, 500)}${emailContent.length > 500 ? "..." : ""}\`\`\``,
+                      inline: false,
+                    },
+                  ],
+                  color: 0x00ff00,
+                  footer: { text: "Use the buttons below to edit or send!" },
                 },
               ],
-              color: 0x00ff00,
-            },
-          ],
-          components: [row],
-        })
-      } else if (subcommand === "test-emails") {
-        await interaction.editReply("📊 Testing email connection...")
+              components: [row],
+            }),
+          })
 
+          console.log("Announcement generation completed successfully")
+        } catch (error) {
+          console.error("Error in async processing:", error)
+
+          // Send error message
+          await fetch(webhookUrl, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              content: `❌ **Error generating announcement**\n\n${error.message}\n\nPlease try again or contact an admin.`,
+              embeds: [],
+              components: [],
+            }),
+          })
+        }
+      }, 1000) // Start after 1 second
+    } else if (subcommand === "test-emails") {
+      // Respond immediately
+      await interaction.reply({
+        content: "📊 Testing email connection...",
+        ephemeral: true,
+      })
+
+      try {
         const result = await getClubEmails()
         const emails = result.emails
         const sheetName = result.sheetName
@@ -342,9 +417,16 @@ export default {
             },
           ],
         })
-      } else if (subcommand === "list-sheets") {
-        await interaction.editReply("📋 Fetching sheets...")
+      } catch (error) {
+        await interaction.editReply(`❌ Error: ${error.message}`)
+      }
+    } else if (subcommand === "list-sheets") {
+      await interaction.reply({
+        content: "📋 Fetching sheets...",
+        ephemeral: true,
+      })
 
+      try {
         const auth = new google.auth.GoogleAuth({
           credentials: {
             type: "service_account",
@@ -382,10 +464,9 @@ export default {
             },
           ],
         })
+      } catch (error) {
+        await interaction.editReply(`❌ Error: ${error.message}`)
       }
-    } catch (error) {
-      console.error("Command error:", error)
-      await interaction.editReply(`❌ Error: ${error.message}`)
     }
   },
 
