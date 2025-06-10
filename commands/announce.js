@@ -24,17 +24,68 @@ function getCurrentSheetName() {
   return `${academicStartYear}/${academicEndYear} Engineering Club Sign Up Sheet  (Responses)`
 }
 
+// Helper function to get current academic year string (e.g., "2024/2025")
+function getCurrentAcademicYear() {
+  const now = new Date()
+  const currentYear = now.getFullYear()
+  const currentMonth = now.getMonth()
+  const academicStartYear = currentMonth >= 8 ? currentYear : currentYear - 1
+  const academicEndYear = academicStartYear + 1
+  return `${academicStartYear}/${academicEndYear}`
+}
+
 // Helper function to find the correct sheet name
 async function findCorrectSheetName(sheets, spreadsheetId) {
   try {
     const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId })
     const sheetNames = spreadsheet.data.sheets.map((sheet) => sheet.properties.title)
 
+    const currentAcademicYear = getCurrentAcademicYear()
+    console.log(`Looking for sheets with academic year: ${currentAcademicYear}`)
+
+    // First, try to find the exact match with current academic year
     const targetSheet = sheetNames.find(
-      (name) => name.includes("Engineering Club Sign Up") && name.includes("Responses") && name.includes("2024/2025"),
+      (name) =>
+        name.includes("Engineering Club Sign Up") && name.includes("Responses") && name.includes(currentAcademicYear),
     )
 
-    return targetSheet || sheetNames.find((name) => name.includes("2024/2025")) || sheetNames[0]
+    if (targetSheet) {
+      console.log(`Found exact match: ${targetSheet}`)
+      return targetSheet
+    }
+
+    // If no exact match, try to find any sheet with the current academic year
+    const yearSheet = sheetNames.find((name) => name.includes(currentAcademicYear))
+    if (yearSheet) {
+      console.log(`Found year match: ${yearSheet}`)
+      return yearSheet
+    }
+
+    // If still no match, try to find the most recent academic year
+    const academicYearPattern = /(\d{4})\/(\d{4})/
+    const sheetsWithYears = sheetNames
+      .map((name) => {
+        const match = name.match(academicYearPattern)
+        if (match) {
+          return {
+            name,
+            startYear: Number.parseInt(match[1]),
+            endYear: Number.parseInt(match[2]),
+          }
+        }
+        return null
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.startYear - a.startYear) // Sort by most recent year first
+
+    if (sheetsWithYears.length > 0) {
+      console.log(`Found most recent academic year sheet: ${sheetsWithYears[0].name}`)
+      return sheetsWithYears[0].name
+    }
+
+    // Last resort: return the first sheet
+    console.log(`No academic year sheets found, using first sheet: ${sheetNames[0]}`)
+    return sheetNames[0]
   } catch (error) {
     console.error("Error finding sheet name:", error)
     return getCurrentSheetName()
@@ -93,7 +144,6 @@ async function sendEmails(subject, content, emails) {
 
     console.log(`Setting up email with: ${process.env.EMAIL_FROM.substring(0, 3)}...`)
 
-    // FIXED: createTransport instead of createTransporter
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
@@ -142,6 +192,9 @@ export default {
       subcommand.setName("test-email-auth").setDescription("Test email authentication only"),
     )
     .addSubcommand((subcommand) => subcommand.setName("list-sheets").setDescription("List available sheets"))
+    .addSubcommand((subcommand) =>
+      subcommand.setName("check-year").setDescription("Check which academic year the bot is detecting"),
+    )
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
     .setDMPermission(false),
 
@@ -321,6 +374,58 @@ export default {
             ],
           })
         }
+      } else if (subcommand === "check-year") {
+        await interaction.deferReply({ ephemeral: true })
+
+        try {
+          const currentAcademicYear = getCurrentAcademicYear()
+          const currentSheetName = getCurrentSheetName()
+
+          const auth = new google.auth.GoogleAuth({
+            credentials: {
+              type: "service_account",
+              project_id: process.env.GOOGLE_PROJECT_ID,
+              private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
+              private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+              client_email: process.env.GOOGLE_CLIENT_EMAIL,
+              client_id: process.env.GOOGLE_CLIENT_ID,
+              auth_uri: "https://accounts.google.com/o/oauth2/auth",
+              token_uri: "https://oauth2.googleapis.com/token",
+              auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
+              client_x509_cert_url: process.env.GOOGLE_CLIENT_CERT_URL,
+            },
+            scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+          })
+
+          const sheets = google.sheets({ version: "v4", auth })
+          const detectedSheetName = await findCorrectSheetName(sheets, process.env.GOOGLE_SHEETS_ID)
+
+          await interaction.editReply({
+            content: null,
+            embeds: [
+              {
+                title: "📅 Academic Year Detection",
+                fields: [
+                  { name: "Current Academic Year", value: currentAcademicYear, inline: true },
+                  { name: "Expected Sheet Name", value: currentSheetName, inline: false },
+                  { name: "Detected Sheet Name", value: detectedSheetName, inline: false },
+                  {
+                    name: "Status",
+                    value: detectedSheetName.includes(currentAcademicYear)
+                      ? "✅ Correct year detected"
+                      : "⚠️ Using fallback sheet",
+                    inline: true,
+                  },
+                ],
+                color: detectedSheetName.includes(currentAcademicYear) ? 0x00ff00 : 0xffaa00,
+                footer: { text: "The bot automatically detects the current academic year based on the date" },
+              },
+            ],
+          })
+        } catch (error) {
+          console.error("Check year error:", error)
+          await interaction.editReply(`❌ Error: ${error.message}`)
+        }
       } else if (subcommand === "list-sheets") {
         await interaction.deferReply({ ephemeral: true })
 
@@ -347,18 +452,27 @@ export default {
           })
 
           const sheetNames = spreadsheet.data.sheets.map((sheet) => sheet.properties.title)
+          const currentAcademicYear = getCurrentAcademicYear()
+
+          // Highlight sheets that match the current academic year
+          const formattedSheets = sheetNames.map((name, index) => {
+            const isCurrentYear = name.includes(currentAcademicYear)
+            return `${index + 1}. ${name}${isCurrentYear ? " ⭐" : ""}`
+          })
 
           await interaction.editReply({
             content: null,
             embeds: [
               {
                 title: "📋 Available Sheets",
-                description: sheetNames.map((name, index) => `${index + 1}. ${name}`).join("\n"),
+                description: formattedSheets.join("\n"),
                 fields: [
                   { name: "Total Sheets", value: sheetNames.length.toString(), inline: true },
+                  { name: "Current Academic Year", value: currentAcademicYear, inline: true },
                   { name: "Expected Pattern", value: getCurrentSheetName(), inline: false },
                 ],
                 color: 0x0099ff,
+                footer: { text: "⭐ indicates sheets matching the current academic year" },
               },
             ],
           })
