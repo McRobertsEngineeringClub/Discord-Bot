@@ -87,13 +87,20 @@ async function getClubEmails() {
 // Helper function to send emails
 async function sendEmails(subject, content, emails) {
   try {
-    const transporter = nodemailer.createTransport({
+    if (!process.env.EMAIL_FROM || !process.env.EMAIL_PASSWORD) {
+      throw new Error("Email credentials not configured")
+    }
+
+    const transporter = nodemailer.createTransporter({
       service: "gmail",
       auth: {
         user: process.env.EMAIL_FROM,
         pass: process.env.EMAIL_PASSWORD,
       },
     })
+
+    // Test the connection first
+    await transporter.verify()
 
     await transporter.sendMail({
       from: `"Engineering Club" <${process.env.EMAIL_FROM}>`,
@@ -162,8 +169,8 @@ export default {
           createdAt: new Date(),
         })
 
-        // Create buttons
-        const row = new ActionRowBuilder().addComponents(
+        // Create buttons with separate send options
+        const row1 = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId(`edit_discord_${announcementId}`)
             .setLabel("Edit Discord")
@@ -175,15 +182,28 @@ export default {
             .setStyle(ButtonStyle.Primary)
             .setEmoji("📧"),
           new ButtonBuilder()
-            .setCustomId(`send_announcement_${announcementId}`)
-            .setLabel("Send Both")
-            .setStyle(ButtonStyle.Success)
-            .setEmoji("🚀"),
-          new ButtonBuilder()
             .setCustomId(`cancel_announcement_${announcementId}`)
             .setLabel("Cancel")
             .setStyle(ButtonStyle.Danger)
             .setEmoji("❌"),
+        )
+
+        const row2 = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`send_discord_${announcementId}`)
+            .setLabel("Send Discord Only")
+            .setStyle(ButtonStyle.Success)
+            .setEmoji("💬"),
+          new ButtonBuilder()
+            .setCustomId(`send_email_${announcementId}`)
+            .setLabel("Send Email Only")
+            .setStyle(ButtonStyle.Success)
+            .setEmoji("📧"),
+          new ButtonBuilder()
+            .setCustomId(`send_both_${announcementId}`)
+            .setLabel("Send Both")
+            .setStyle(ButtonStyle.Success)
+            .setEmoji("🚀"),
         )
 
         await interaction.reply({
@@ -212,7 +232,7 @@ export default {
               footer: { text: "Use the buttons below to edit or send!" },
             },
           ],
-          components: [row],
+          components: [row1, row2],
           ephemeral: true,
         })
       } else if (subcommand === "test-emails") {
@@ -242,6 +262,7 @@ export default {
             ],
           })
         } catch (error) {
+          console.error("Test emails error:", error)
           await interaction.editReply(`❌ Error: ${error.message}`)
         }
       } else if (subcommand === "list-sheets") {
@@ -286,6 +307,7 @@ export default {
             ],
           })
         } catch (error) {
+          console.error("List sheets error:", error)
           await interaction.editReply(`❌ Error: ${error.message}`)
         }
       }
@@ -293,9 +315,9 @@ export default {
       console.error("Command error:", error)
       try {
         if (!interaction.replied && !interaction.deferred) {
-          await interaction.reply({ content: `Error: ${error.message}`, ephemeral: true })
+          await interaction.reply({ content: `❌ Error: ${error.message}`, ephemeral: true })
         } else {
-          await interaction.editReply(`Error: ${error.message}`)
+          await interaction.editReply(`❌ Error: ${error.message}`)
         }
       } catch (replyError) {
         console.error("Failed to send error message:", replyError)
@@ -306,14 +328,16 @@ export default {
   // Handle button interactions
   async handleButtonInteraction(interaction) {
     try {
+      console.log(`Button interaction: ${interaction.customId} by ${interaction.user.tag}`)
+
       const [action, type, announcementId] = interaction.customId.split("_")
 
-      if (action !== "edit" && action !== "send" && action !== "cancel") return
+      if (!["edit", "send", "cancel"].includes(action)) return
 
       const announcement = pendingAnnouncements.get(announcementId)
       if (!announcement) {
         await interaction.reply({
-          content: "This announcement has expired.",
+          content: "❌ This announcement has expired.",
           ephemeral: true,
         })
         return
@@ -324,7 +348,7 @@ export default {
         !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)
       ) {
         await interaction.reply({
-          content: "You can only edit your own announcements.",
+          content: "❌ You can only edit your own announcements.",
           ephemeral: true,
         })
         return
@@ -376,39 +400,90 @@ export default {
 
         case "send": {
           await interaction.reply({
-            content: "🚀 Sending announcements...",
+            content: `🚀 Sending ${type === "both" ? "both announcements" : type === "discord" ? "Discord announcement" : "email announcement"}...`,
             ephemeral: true,
           })
 
-          try {
-            // Get emails
-            const result = await getClubEmails()
-            const emails = result.emails
-            if (emails.length === 0) {
-              throw new Error("No emails found")
+          let discordSuccess = false
+          let emailSuccess = false
+          let discordError = null
+          let emailError = null
+
+          // Send Discord announcement
+          if (type === "discord" || type === "both") {
+            try {
+              console.log("Attempting to send Discord announcement...")
+              const announcementChannel = interaction.guild.channels.cache.get(process.env.ANNOUNCEMENT_CHANNEL_ID)
+
+              if (!announcementChannel) {
+                throw new Error(`Announcement channel not found. Channel ID: ${process.env.ANNOUNCEMENT_CHANNEL_ID}`)
+              }
+
+              console.log(`Found announcement channel: ${announcementChannel.name}`)
+              await announcementChannel.send(announcement.discordContent)
+              discordSuccess = true
+              console.log("Discord announcement sent successfully")
+            } catch (error) {
+              console.error("Discord send error:", error)
+              discordError = error.message
             }
+          }
 
-            // Send Discord announcement
-            const announcementChannel = interaction.guild.channels.cache.get(process.env.ANNOUNCEMENT_CHANNEL_ID)
-            if (!announcementChannel) {
-              throw new Error("Announcement channel not found")
+          // Send Email announcement
+          if (type === "email" || type === "both") {
+            try {
+              console.log("Attempting to send email announcement...")
+              const result = await getClubEmails()
+              const emails = result.emails
+
+              if (emails.length === 0) {
+                throw new Error("No emails found in the spreadsheet")
+              }
+
+              console.log(`Found ${emails.length} emails`)
+              await sendEmails(announcement.emailSubject, announcement.emailContent, emails)
+              emailSuccess = true
+              console.log("Email announcement sent successfully")
+            } catch (error) {
+              console.error("Email send error:", error)
+              emailError = error.message
             }
+          }
 
-            await announcementChannel.send(announcement.discordContent)
-            await sendEmails(announcement.emailSubject, announcement.emailContent, emails)
+          // Build result message
+          let resultMessage = ""
+          if (type === "discord") {
+            resultMessage = discordSuccess ? "✅ Discord announcement sent!" : `❌ Discord failed: ${discordError}`
+          } else if (type === "email") {
+            resultMessage = emailSuccess ? "✅ Email announcement sent!" : `❌ Email failed: ${emailError}`
+          } else {
+            // both
+            const results = []
+            if (discordSuccess) results.push("✅ Discord sent")
+            else results.push(`❌ Discord failed: ${discordError}`)
 
+            if (emailSuccess) results.push("✅ Email sent")
+            else results.push(`❌ Email failed: ${emailError}`)
+
+            resultMessage = results.join("\n")
+          }
+
+          await interaction.editReply(resultMessage)
+
+          // If everything was successful, clean up
+          if (
+            (type === "discord" && discordSuccess) ||
+            (type === "email" && emailSuccess) ||
+            (type === "both" && discordSuccess && emailSuccess)
+          ) {
             pendingAnnouncements.delete(announcementId)
-
-            await interaction.editReply(
-              `✅ Sent!\n📱 Discord: ${announcementChannel.name}\n📧 Email: ${emails.length} members`,
-            )
 
             try {
               await interaction.message.edit({
                 embeds: [
                   {
                     title: "✅ Announcement Sent",
-                    description: "Successfully sent to Discord and email.",
+                    description: "Successfully sent announcement(s).",
                     color: 0x00ff00,
                     timestamp: new Date(),
                   },
@@ -416,10 +491,8 @@ export default {
                 components: [],
               })
             } catch (editError) {
-              console.log("Could not edit original message")
+              console.log("Could not edit original message:", editError.message)
             }
-          } catch (error) {
-            await interaction.editReply(`❌ Error: ${error.message}`)
           }
           break
         }
@@ -441,12 +514,16 @@ export default {
         }
       }
     } catch (error) {
-      console.error("Button error:", error)
+      console.error("Button interaction error:", error)
       try {
-        await interaction.reply({
-          content: `Error: ${error.message}`,
-          ephemeral: true,
-        })
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({
+            content: `❌ Error: ${error.message}`,
+            ephemeral: true,
+          })
+        } else {
+          await interaction.editReply(`❌ Error: ${error.message}`)
+        }
       } catch (replyError) {
         console.error("Failed to send error message:", replyError)
       }
@@ -461,7 +538,7 @@ export default {
       const announcement = pendingAnnouncements.get(announcementId)
       if (!announcement) {
         await interaction.reply({
-          content: "Announcement expired.",
+          content: "❌ Announcement expired.",
           ephemeral: true,
         })
         return
@@ -476,7 +553,7 @@ export default {
 
       pendingAnnouncements.set(announcementId, announcement)
 
-      const row = new ActionRowBuilder().addComponents(
+      const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`edit_discord_${announcementId}`)
           .setLabel("Edit Discord")
@@ -488,15 +565,28 @@ export default {
           .setStyle(ButtonStyle.Primary)
           .setEmoji("📧"),
         new ButtonBuilder()
-          .setCustomId(`send_announcement_${announcementId}`)
-          .setLabel("Send Both")
-          .setStyle(ButtonStyle.Success)
-          .setEmoji("🚀"),
-        new ButtonBuilder()
           .setCustomId(`cancel_announcement_${announcementId}`)
           .setLabel("Cancel")
           .setStyle(ButtonStyle.Danger)
           .setEmoji("❌"),
+      )
+
+      const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`send_discord_${announcementId}`)
+          .setLabel("Send Discord Only")
+          .setStyle(ButtonStyle.Success)
+          .setEmoji("💬"),
+        new ButtonBuilder()
+          .setCustomId(`send_email_${announcementId}`)
+          .setLabel("Send Email Only")
+          .setStyle(ButtonStyle.Success)
+          .setEmoji("📧"),
+        new ButtonBuilder()
+          .setCustomId(`send_both_${announcementId}`)
+          .setLabel("Send Both")
+          .setStyle(ButtonStyle.Success)
+          .setEmoji("🚀"),
       )
 
       await interaction.update({
@@ -523,13 +613,13 @@ export default {
             color: 0x00ff00,
           },
         ],
-        components: [row],
+        components: [row1, row2],
       })
     } catch (error) {
-      console.error("Modal error:", error)
+      console.error("Modal submit error:", error)
       try {
         await interaction.reply({
-          content: `Error: ${error.message}`,
+          content: `❌ Error: ${error.message}`,
           ephemeral: true,
         })
       } catch (replyError) {
