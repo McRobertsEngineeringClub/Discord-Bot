@@ -85,12 +85,17 @@ async function getClubEmails() {
   }
 }
 
-// Helper function to generate announcement using external API
+// Helper function to generate announcement using Groq API
 async function generateAnnouncementAsync(topic, details, webhookUrl) {
   try {
     console.log("Sending async request to generate announcement...")
 
-    // Send request to external service (you can use any API service)
+    // Check if API key exists
+    if (!process.env.GROQ_API_KEY) {
+      throw new Error("Groq API key not configured")
+    }
+
+    // Use the correct Groq API endpoint
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -98,7 +103,7 @@ async function generateAnnouncementAsync(topic, details, webhookUrl) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "deepseek-r1-distill-llama-70b",
+        model: "llama-3.1-70b-versatile", // Use a more reliable model
         messages: [
           {
             role: "user",
@@ -138,7 +143,9 @@ Engineering Club Execs`,
     })
 
     if (!response.ok) {
-      throw new Error(`API request failed: ${response.status}`)
+      const errorText = await response.text()
+      console.error("API Error Response:", errorText)
+      throw new Error(`API request failed: ${response.status} - ${errorText}`)
     }
 
     const data = await response.json()
@@ -148,45 +155,15 @@ Engineering Club Execs`,
       throw new Error("No content generated")
     }
 
-    // Send result back to Discord via webhook
-    await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        content: null,
-        embeds: [
-          {
-            title: "🤖 AI Generation Complete!",
-            description: "Your announcement has been generated. Processing...",
-            color: 0x00ff00,
-          },
-        ],
-      }),
-    })
-
+    console.log("AI generation successful")
     return generatedContent
   } catch (error) {
     console.error("Error in async generation:", error)
 
-    // Send error back via webhook
-    await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        content: null,
-        embeds: [
-          {
-            title: "⚠️ Using Fallback Content",
-            description: "AI generation failed, using basic template.",
-            color: 0xffaa00,
-          },
-        ],
-      }),
-    })
-
-    // Return fallback content
+    // Return fallback content instead of throwing
+    console.log("Using fallback content due to API error")
     return `**Discord Announcement:**
-"@everyone 🚨 **${topic}** 🚨 ${details || "Important announcement!"} 🔧⚡"
+"@everyone 🚨 **${topic}** 🚨 ${details || "Important announcement from Engineering Club!"} 🔧⚡"
 
 ---
 
@@ -196,9 +173,16 @@ Subject: 🛠️ Engineering Club: ${topic}
 
 Dear Engineering Club Members,
 
-${topic}
+We have an important announcement regarding: ${topic}
 
-${details || "More details coming soon."}
+${details || "More details will be provided soon."}
+
+Here's what you need to know:
+- **When:** TBD
+- **Where:** Electronics room
+- **What to bring:** TBD
+
+Stay tuned for more information!
 
 Best,
 Engineering Club Execs`
@@ -256,7 +240,7 @@ export default {
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
       return interaction.reply({
         content: "❌ No permission to create announcements.",
-        ephemeral: true,
+        flags: 64, // ephemeral flag
       })
     }
 
@@ -267,11 +251,10 @@ export default {
       const details = interaction.options.getString("details") || ""
 
       // Respond immediately with a webhook URL for updates
-      const webhookResponse = await interaction.reply({
+      await interaction.reply({
         content:
           "🚀 **Announcement Generation Started!**\n\n⏳ Generating AI content in the background...\n📝 This may take 10-30 seconds",
-        ephemeral: true,
-        wait: true,
+        flags: 64, // ephemeral flag
       })
 
       // Get the webhook URL for this interaction
@@ -293,11 +276,13 @@ export default {
           let discordContent, emailSubject, emailContent
 
           if (!discordMatch || !emailMatch) {
+            console.log("Using fallback parsing")
             // Fallback
             discordContent = `@everyone 🚨 **${topic}** 🚨\n\n${details || "More details coming soon!"} 🔧⚡`
             emailSubject = `🛠️ Engineering Club: ${topic}`
             emailContent = `Dear Engineering Club Members,\n\n${topic}\n\n${details || "More details coming soon."}\n\nBest,\nEngineering Club Execs`
           } else {
+            console.log("Successfully parsed AI content")
             discordContent = discordMatch[1]
             emailSubject = emailMatch[1]
             emailContent = emailMatch[2] + "\n\nBest,\nEngineering Club Execs"
@@ -342,10 +327,10 @@ export default {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              content: null,
+              content: "✅ **Announcement Ready!**",
               embeds: [
                 {
-                  title: "📢 Announcement Ready!",
+                  title: "📢 Generated Announcement",
                   fields: [
                     {
                       name: "💬 Discord",
@@ -386,12 +371,12 @@ export default {
             }),
           })
         }
-      }, 1000) // Start after 1 second
+      }, 2000) // Start after 2 seconds to give user time to see the initial message
     } else if (subcommand === "test-emails") {
       // Respond immediately
       await interaction.reply({
         content: "📊 Testing email connection...",
-        ephemeral: true,
+        flags: 64, // ephemeral flag
       })
 
       try {
@@ -423,7 +408,7 @@ export default {
     } else if (subcommand === "list-sheets") {
       await interaction.reply({
         content: "📋 Fetching sheets...",
-        ephemeral: true,
+        flags: 64, // ephemeral flag
       })
 
       try {
@@ -480,7 +465,7 @@ export default {
     if (!announcement) {
       return interaction.reply({
         content: "This announcement has expired.",
-        ephemeral: true,
+        flags: 64, // ephemeral flag
       })
     }
 
@@ -490,7 +475,7 @@ export default {
     ) {
       return interaction.reply({
         content: "You can only edit your own announcements.",
-        ephemeral: true,
+        flags: 64, // ephemeral flag
       })
     }
 
@@ -542,7 +527,7 @@ export default {
         case "send": {
           await interaction.reply({
             content: "🚀 Sending announcements...",
-            ephemeral: true,
+            flags: 64, // ephemeral flag
           })
 
           try {
@@ -618,7 +603,7 @@ export default {
     if (!announcement) {
       return interaction.reply({
         content: "Announcement expired.",
-        ephemeral: true,
+        flags: 64, // ephemeral flag
       })
     }
 
@@ -685,7 +670,7 @@ export default {
       console.error("Modal error:", error)
       await interaction.reply({
         content: `❌ Error: ${error.message}`,
-        ephemeral: true,
+        flags: 64, // ephemeral flag
       })
     }
   },
