@@ -4,7 +4,6 @@ import { fileURLToPath } from "url"
 import { dirname } from "path"
 import express from "express"
 import dotenv from "dotenv"
-import fetch from "node-fetch"
 
 dotenv.config({ path: ".env" })
 dotenv.config({ path: "local.env" })
@@ -12,7 +11,7 @@ dotenv.config({ path: "local.env" })
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-console.log("[v0] Checking environment variables...")
+console.log("Checking environment variables...")
 if (!process.env.DISCORD_TOKEN) {
   console.error("❌ DISCORD_TOKEN is missing! Please add it to your environment variables.")
   process.exit(1)
@@ -33,13 +32,6 @@ app.get("/", (req, res) => {
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`)
 })
-
-// Keep-alive mechanism
-if (process.env.RENDER_EXTERNAL_URL) {
-  setInterval(() => {
-    fetch(process.env.RENDER_EXTERNAL_URL).then(() => console.log("Kept alive"))
-  }, 840000) // 14 minutes
-}
 
 // Configuration
 const client = new Client({
@@ -177,117 +169,18 @@ client.on(Events.MessageCreate, async (message) => {
 // Error Handling
 client.on(Events.Error, console.error)
 
-async function testDiscordConnectivity() {
-  console.log("[v0] Testing Discord API connectivity...")
-
-  try {
-    // Test Discord API endpoint
-    const response = await fetch("https://discord.com/api/v10/gateway", {
-      timeout: 10000,
-    })
-
-    if (response.ok) {
-      const data = await response.json()
-      console.log("✅ Discord API is reachable")
-      console.log("[v0] Gateway URL:", data.url)
-    } else {
-      console.error("❌ Discord API returned error:", response.status, response.statusText)
-
-      if (response.status === 429) {
-        const retryAfter = response.headers.get("retry-after")
-        console.error(`🚫 Rate limited! Retry after: ${retryAfter} seconds`)
-        return { rateLimited: true, retryAfter: Number.parseInt(retryAfter) || 60 }
-      }
-    }
-  } catch (error) {
-    console.error("❌ Cannot reach Discord API:", error.message)
-    console.error("This indicates network connectivity issues between Render and Discord")
-  }
-
-  try {
-    // Test Discord gateway connectivity
-    const gatewayResponse = await fetch("https://gateway.discord.gg", {
-      timeout: 10000,
-    })
-    console.log("✅ Discord Gateway is reachable")
-  } catch (error) {
-    console.error("❌ Cannot reach Discord Gateway:", error.message)
-  }
-
-  return { rateLimited: false }
-}
-
-async function loginWithRetry(maxRetries = 5) {
-  console.log("[v0] Attempting to login to Discord...")
-  console.log("[v0] Token length:", process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.length : "undefined")
-  console.log(
-    "[v0] Token starts with:",
-    process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.substring(0, 10) + "..." : "undefined",
-  )
-
-  const connectivityResult = await testDiscordConnectivity()
-
-  // If we're rate limited, wait before attempting login
-  if (connectivityResult.rateLimited) {
-    const waitTime = connectivityResult.retryAfter || 60
-    console.log(`⏳ Waiting ${waitTime} seconds due to rate limiting...`)
-    await new Promise((resolve) => setTimeout(resolve, waitTime * 1000))
-  }
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      console.log(`[v0] Login attempt ${attempt}/${maxRetries}`)
-
-      // Set a timeout for this specific attempt
-      const loginPromise = client.login(token)
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error("Login timeout")), 30000)
-      })
-
-      await Promise.race([loginPromise, timeoutPromise])
-      console.log("✅ Discord login successful!")
-      return true
-    } catch (error) {
-      console.error(`❌ Login attempt ${attempt} failed:`, error.message)
-
-      // Check if it's a rate limit error
-      if (error.code === 429 || error.message.includes("429") || error.message.includes("rate limit")) {
-        const baseDelay = Math.min(1000 * Math.pow(2, attempt - 1), 60000) // Exponential backoff, max 60s
-        const jitter = Math.random() * 1000 // Add jitter to prevent thundering herd
-        const delay = baseDelay + jitter
-
-        console.log(`🚫 Rate limited on attempt ${attempt}. Waiting ${Math.round(delay / 1000)}s before retry...`)
-
-        if (attempt < maxRetries) {
-          await new Promise((resolve) => setTimeout(resolve, delay))
-          continue
-        }
-      }
-
-      // If it's the last attempt or not a rate limit error, throw
-      if (attempt === maxRetries) {
-        throw error
-      }
-
-      // For other errors, wait a shorter time before retry
-      const delay = 5000 * attempt
-      console.log(`⏳ Waiting ${delay / 1000}s before retry...`)
-      await new Promise((resolve) => setTimeout(resolve, delay))
-    }
-  }
-
-  throw new Error(`Failed to login after ${maxRetries} attempts`)
-}
+console.log("Attempting to login to Discord...")
+console.log("Token length:", process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.length : "undefined")
+console.log(
+  "Token starts with:",
+  process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.substring(0, 10) + "..." : "undefined",
+)
 
 try {
-  await loginWithRetry()
+  await client.login(token)
+  console.log("✅ Discord login successful!")
 } catch (error) {
-  console.error("❌ Failed to login to Discord after all retries:", error.message)
-  console.error("This usually means:")
-  console.error("1. Render's IP addresses are being rate-limited by Discord")
-  console.error("2. Network connectivity issues between Render and Discord")
-  console.error("3. Invalid Discord token (but token format looks correct)")
-  console.error("4. Discord's API is experiencing issues")
-  console.error("\nTry deploying again in a few minutes, or contact Render support if the issue persists.")
+  console.error("❌ Failed to login to Discord:", error.message)
+  console.error("Please check your DISCORD_TOKEN environment variable")
   process.exit(1)
 }
