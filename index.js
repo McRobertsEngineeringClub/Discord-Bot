@@ -4,6 +4,7 @@ import { fileURLToPath } from "url"
 import { dirname } from "path"
 import express from "express"
 import dotenv from "dotenv"
+import fetch from "node-fetch"
 
 dotenv.config({ path: ".env" })
 dotenv.config({ path: "local.env" })
@@ -36,6 +37,21 @@ app.get("/keep-alive", (req, res) => {
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`)
 })
+
+// Self-ping every 14 minutes to keep the service alive
+const RENDER_URL = "https://mcroberts-engineering-club-discord-bot.onrender.com"
+setInterval(
+  async () => {
+    try {
+      const response = await fetch(`${RENDER_URL}/keep-alive`)
+      const data = await response.json()
+      console.log(`[v0] Keep-alive ping successful:`, data.timestamp)
+    } catch (error) {
+      console.error(`[v0] Keep-alive ping failed:`, error.message)
+    }
+  },
+  14 * 60 * 1000,
+) // 14 minutes in milliseconds
 
 // Configuration
 const client = new Client({
