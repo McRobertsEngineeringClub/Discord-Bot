@@ -257,12 +257,12 @@ export default {
 
         const discordEmbed = new EmbedBuilder()
           .setTitle(`🚨 ${topic}`)
-          .setDescription(`## ${details || "More details coming soon!"}\n\u200B`)
+          .setDescription(`# ${details || "More details coming soon!"}\n\u200B\n\u200B`)
           .setColor(0x5dade2) // Light blue color to match logo
           .addFields(
-            { name: "\n## 📍 **Location**", value: "### Electronics Room\n\u200B\n\u200B", inline: true },
-            { name: "\n## ⏰ **Time**", value: "### TBD\n\u200B\n\u200B", inline: true },
-            { name: "\n## 🎯 **What to Bring**", value: "### TBD\n\u200B\n\u200B", inline: true },
+            { name: "\n# 📍 **Location**", value: "# Electronics Room\n\u200B\n\u200B\n\u200B", inline: true },
+            { name: "\n# ⏰ **Time**", value: "# TBD\n\u200B\n\u200B\n\u200B", inline: true },
+            { name: "\n# 🎯 **What to Bring**", value: "# TBD\n\u200B\n\u200B\n\u200B", inline: true },
           )
           .setFooter({
             text: "Engineering Club • Stay tuned for updates!",
@@ -270,13 +270,6 @@ export default {
           })
           .setTimestamp()
           .setThumbnail("https://drive.google.com/uc?export=view&id=1FMf439DX_I-Up9Nww7x-ajlyuppcE_rZ")
-
-        if (attachments.length > 0) {
-          const imageAttachment = attachments.find((att) => att.contentType && att.contentType.startsWith("image/"))
-          if (imageAttachment) {
-            discordEmbed.setImage(imageAttachment.url)
-          }
-        }
 
         const discordContent = "@everyone"
         const emailSubject = `🛠️ Engineering Club: ${topic}`
@@ -611,16 +604,20 @@ export default {
       switch (action) {
         case "test": {
           if (type === "preview") {
-            await interaction.reply({
+            const testMessageOptions = {
               content: `${announcement.discordContent} 🧪 **Test Preview** - This is how your announcement will look:`,
               embeds: [announcement.discordEmbed],
-              files:
-                announcement.attachments && announcement.attachments.length > 0
-                  ? announcement.attachments.map((att) => ({
-                      attachment: att.url,
-                      name: att.name,
-                    }))
-                  : undefined,
+            }
+
+            if (announcement.attachments && announcement.attachments.length > 0) {
+              testMessageOptions.files = announcement.attachments.map((att) => ({
+                attachment: att.url,
+                name: att.name,
+              }))
+            }
+
+            await interaction.reply({
+              ...testMessageOptions,
               ephemeral: false, // Make it visible to test in the channel
             })
           }
@@ -699,14 +696,6 @@ export default {
               }
 
               if (announcement.attachments && announcement.attachments.length > 0) {
-                const imageAttachment = announcement.attachments.find(
-                  (att) => att.contentType && att.contentType.startsWith("image/"),
-                )
-
-                if (imageAttachment) {
-                  announcement.discordEmbed.setImage(imageAttachment.url)
-                }
-
                 messageOptions.files = announcement.attachments.map((att) => ({
                   attachment: att.url,
                   name: att.name,
