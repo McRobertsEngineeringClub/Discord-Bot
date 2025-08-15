@@ -258,7 +258,7 @@ export default {
         const discordEmbed = new EmbedBuilder()
           .setTitle(`🚨 ${topic}`)
           .setDescription(details || "More details coming soon!")
-          .setColor(0xff6b35) // Engineering orange color
+          .setColor(0x5dade2) // Light blue color to match logo
           .addFields(
             { name: "📍 Location", value: "Electronics Room", inline: true },
             { name: "⏰ Time", value: "TBD", inline: true },
@@ -269,7 +269,7 @@ export default {
             iconURL: "https://cdn.discordapp.com/emojis/🔧.png",
           })
           .setTimestamp()
-          .setThumbnail("https://drive.google.com/file/d/1FMf439DX_I-Up9Nww7x-ajlyuppcE_rZ/view?usp=sharing")
+          .setThumbnail("https://placeholder.svg?height=80&width=80&query=engineering+club+logo+light+blue")
 
         const discordContent = "@everyone"
         const emailSubject = `🛠️ Engineering Club: ${topic}`
@@ -300,10 +300,10 @@ export default {
             .setStyle(ButtonStyle.Primary)
             .setEmoji("📧"),
           new ButtonBuilder()
-            .setCustomId(`cancel_announcement_${announcementId}`)
-            .setLabel("Cancel")
-            .setStyle(ButtonStyle.Danger)
-            .setEmoji("❌"),
+            .setCustomId(`test_preview_${announcementId}`)
+            .setLabel("Test Preview")
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji("👀"),
         )
 
         const row2 = new ActionRowBuilder().addComponents(
@@ -322,6 +322,14 @@ export default {
             .setLabel("Send Both")
             .setStyle(ButtonStyle.Success)
             .setEmoji("🚀"),
+        )
+
+        const row3 = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`cancel_announcement_${announcementId}`)
+            .setLabel("Cancel")
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji("❌"),
         )
 
         const previewFields = [
@@ -360,7 +368,7 @@ export default {
               footer: { text: "Use the buttons below to edit or send!" },
             },
           ],
-          components: [row1, row2],
+          components: [row1, row2, row3],
           ephemeral: true,
         })
       } else if (subcommand === "test-emails") {
@@ -567,7 +575,7 @@ export default {
 
       const [action, type, announcementId] = interaction.customId.split("_")
 
-      if (!["edit", "send", "cancel"].includes(action)) return
+      if (!["edit", "send", "cancel", "test"].includes(action)) return
 
       const announcement = pendingAnnouncements.get(announcementId)
       if (!announcement) {
@@ -590,6 +598,24 @@ export default {
       }
 
       switch (action) {
+        case "test": {
+          if (type === "preview") {
+            await interaction.reply({
+              content: "🧪 **Test Preview** - This is how your announcement will look:",
+              embeds: [announcement.discordEmbed],
+              files:
+                announcement.attachments && announcement.attachments.length > 0
+                  ? announcement.attachments.map((att) => ({
+                      attachment: att.url,
+                      name: att.name,
+                    }))
+                  : undefined,
+              ephemeral: false, // Make it visible to test in the channel
+            })
+          }
+          break
+        }
+
         case "edit": {
           if (type === "discord") {
             const modal = new ModalBuilder()
@@ -827,10 +853,10 @@ export default {
           .setStyle(ButtonStyle.Primary)
           .setEmoji("📧"),
         new ButtonBuilder()
-          .setCustomId(`cancel_announcement_${announcementId}`)
-          .setLabel("Cancel")
-          .setStyle(ButtonStyle.Danger)
-          .setEmoji("❌"),
+          .setCustomId(`test_preview_${announcementId}`)
+          .setLabel("Test Preview")
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji("👀"),
       )
 
       const row2 = new ActionRowBuilder().addComponents(
@@ -849,6 +875,14 @@ export default {
           .setLabel("Send Both")
           .setStyle(ButtonStyle.Success)
           .setEmoji("🚀"),
+      )
+
+      const row3 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`cancel_announcement_${announcementId}`)
+          .setLabel("Cancel")
+          .setStyle(ButtonStyle.Danger)
+          .setEmoji("❌"),
       )
 
       await interaction.update({
@@ -875,7 +909,7 @@ export default {
             color: 0x00ff00,
           },
         ],
-        components: [row1, row2],
+        components: [row1, row2, row3],
       })
     } catch (error) {
       console.error("Modal submit error:", error)
