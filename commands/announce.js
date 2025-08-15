@@ -604,22 +604,30 @@ export default {
       switch (action) {
         case "test": {
           if (type === "preview") {
-            const testMessageOptions = {
+            const embedMessage = await interaction.reply({
               content: `${announcement.discordContent} 🧪 **Test Preview** - This is how your announcement will look:`,
               embeds: [announcement.discordEmbed],
-            }
-
-            if (announcement.attachments && announcement.attachments.length > 0) {
-              testMessageOptions.files = announcement.attachments.map((att) => ({
-                attachment: att.url,
-                name: att.name,
-              }))
-            }
-
-            await interaction.reply({
-              ...testMessageOptions,
-              ephemeral: false, // Make it visible to test in the channel
+              ephemeral: false,
             })
+
+            // Send attachments as separate messages after the embed
+            if (announcement.attachments && announcement.attachments.length > 0) {
+              for (const attachment of announcement.attachments) {
+                try {
+                  await interaction.followUp({
+                    files: [
+                      {
+                        attachment: attachment.url,
+                        name: attachment.name,
+                      },
+                    ],
+                    ephemeral: false,
+                  })
+                } catch (error) {
+                  console.error(`Failed to send attachment ${attachment.name}:`, error)
+                }
+              }
+            }
           }
           break
         }
