@@ -177,8 +177,33 @@ client.on(Events.MessageCreate, async (message) => {
 client.on(Events.Error, console.error)
 
 console.log("[v0] Attempting to login to Discord...")
-client.login(token).catch((error) => {
-  console.error("❌ Failed to login to Discord:", error)
-  console.error("Please check your DISCORD_TOKEN environment variable")
+console.log("[v0] Token length:", process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.length : "undefined")
+console.log(
+  "[v0] Token starts with:",
+  process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.substring(0, 10) + "..." : "undefined",
+)
+
+// Add a timeout to detect if login is hanging
+const loginTimeout = setTimeout(() => {
+  console.error("❌ Discord login timed out after 30 seconds")
+  console.error("This usually means:")
+  console.error("1. Invalid Discord token")
+  console.error("2. Network connectivity issues")
+  console.error("3. Discord API is down")
   process.exit(1)
-})
+}, 30000)
+
+client
+  .login(token)
+  .then(() => {
+    clearTimeout(loginTimeout)
+    console.log("✅ Discord login successful!")
+  })
+  .catch((error) => {
+    clearTimeout(loginTimeout)
+    console.error("❌ Failed to login to Discord:", error)
+    console.error("Error details:", error.message)
+    console.error("Please check your DISCORD_TOKEN environment variable")
+    console.error("Make sure the token is valid and the bot has proper permissions")
+    process.exit(1)
+  })
