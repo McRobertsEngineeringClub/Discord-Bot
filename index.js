@@ -6,7 +6,8 @@ import express from "express"
 import dotenv from "dotenv"
 import fetch from "node-fetch"
 
-dotenv.config()
+dotenv.config({ path: ".env" })
+dotenv.config({ path: "local.env" })
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
