@@ -11,7 +11,7 @@ dotenv.config({ path: "local.env" })
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-console.log("Checking environment variables...")
+console.log("[v0] Checking environment variables...")
 if (!process.env.DISCORD_TOKEN) {
   console.error("❌ DISCORD_TOKEN is missing! Please add it to your environment variables.")
   process.exit(1)
@@ -23,10 +23,14 @@ console.log("✅ Environment variables checked")
 
 // Express server setup
 const app = express()
-const port = process.env.PORT || 8080
+const port = process.env.PORT || 10000
 
 app.get("/", (req, res) => {
   res.send("Discord bot is running!")
+})
+
+app.get("/keep-alive", (req, res) => {
+  res.json({ status: "alive", timestamp: new Date().toISOString() })
 })
 
 app.listen(port, () => {
@@ -41,7 +45,7 @@ client.commands = new Collection()
 const token = process.env.DISCORD_TOKEN
 const INTRODUCTION_CHANNEL_ID = process.env.INTRODUCTION_CHANNEL_ID
 
-console.log("Loading commands...")
+console.log("[v0] Loading commands...")
 const commandFiles = fs.readdirSync("./commands").filter((file) => file.endsWith(".js"))
 for (const file of commandFiles) {
   try {
@@ -169,10 +173,10 @@ client.on(Events.MessageCreate, async (message) => {
 // Error Handling
 client.on(Events.Error, console.error)
 
-console.log("Attempting to login to Discord...")
-console.log("Token length:", process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.length : "undefined")
+console.log("[v0] Attempting to login to Discord...")
+console.log("[v0] Token length:", process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.length : "undefined")
 console.log(
-  "Token starts with:",
+  "[v0] Token starts with:",
   process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.substring(0, 10) + "..." : "undefined",
 )
 
