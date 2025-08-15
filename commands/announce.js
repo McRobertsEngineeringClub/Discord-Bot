@@ -10,6 +10,7 @@ import {
 } from "discord.js"
 import { google } from "googleapis"
 import nodemailer from "nodemailer"
+import fetch from "node-fetch"
 
 // Store pending announcements
 const pendingAnnouncements = new Map()
@@ -136,7 +137,7 @@ async function getClubEmails() {
 }
 
 // Helper function to send emails
-async function sendEmails(subject, content, emails) {
+async function sendEmails(subject, content, emails, attachments = []) {
   try {
     if (!process.env.EMAIL_FROM || !process.env.EMAIL_PASSWORD) {
       throw new Error("Email credentials not configured")
@@ -153,17 +154,31 @@ async function sendEmails(subject, content, emails) {
     })
 
     console.log("Testing email connection...")
-    // Test the connection first
     await transporter.verify()
     console.log("Email connection verified!")
 
-    console.log(`Sending email to ${emails.length} recipients...`)
+    const emailAttachments = []
+    for (const attachment of attachments) {
+      try {
+        const response = await fetch(attachment.url)
+        const buffer = await response.buffer()
+        emailAttachments.push({
+          filename: attachment.name,
+          content: buffer,
+        })
+      } catch (error) {
+        console.error(`Failed to download attachment ${attachment.name}:`, error)
+      }
+    }
+
+    console.log(`Sending email to ${emails.length} recipients with ${emailAttachments.length} attachments...`)
     await transporter.sendMail({
       from: `"Engineering Club" <${process.env.EMAIL_FROM}>`,
       bcc: emails.join(","),
       subject: subject,
       text: content,
       html: content.replace(/\n/g, "<br>").replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>"),
+      attachments: emailAttachments,
     })
     console.log("Email sent successfully!")
 
@@ -185,6 +200,15 @@ export default {
         .addStringOption((option) => option.setName("topic").setDescription("The main topic/event").setRequired(true))
         .addStringOption((option) =>
           option.setName("details").setDescription("Additional details (optional)").setRequired(false),
+        )
+        .addAttachmentOption((option) =>
+          option.setName("attachment1").setDescription("Optional file/image to include").setRequired(false),
+        )
+        .addAttachmentOption((option) =>
+          option.setName("attachment2").setDescription("Optional second file/image").setRequired(false),
+        )
+        .addAttachmentOption((option) =>
+          option.setName("attachment3").setDescription("Optional third file/image").setRequired(false),
         ),
     )
     .addSubcommand((subcommand) => subcommand.setName("test-emails").setDescription("Test email connection"))
@@ -217,6 +241,19 @@ export default {
         const topic = interaction.options.getString("topic")
         const details = interaction.options.getString("details") || ""
 
+        const attachments = []
+        for (let i = 1; i <= 3; i++) {
+          const attachment = interaction.options.getAttachment(`attachment${i}`)
+          if (attachment) {
+            attachments.push({
+              name: attachment.name,
+              url: attachment.url,
+              size: attachment.size,
+              contentType: attachment.contentType,
+            })
+          }
+        }
+
         // Immediately create a basic announcement without AI
         const discordContent = `@everyone 🚨 **${topic}** 🚨\n\n${details || "More details coming soon!"} 🔧⚡`
         const emailSubject = `🛠️ Engineering Club: ${topic}`
@@ -228,6 +265,7 @@ export default {
           discordContent,
           emailSubject,
           emailContent,
+          attachments,
           createdBy: interaction.user.id,
           createdAt: new Date(),
         })
@@ -269,28 +307,38 @@ export default {
             .setEmoji("🚀"),
         )
 
+        const previewFields = [
+          {
+            name: "💬 Discord",
+            value: `\`\`\`${discordContent.substring(0, 1000)}\`\`\``,
+            inline: false,
+          },
+          {
+            name: "📧 Email Subject",
+            value: `\`\`\`${emailSubject}\`\`\``,
+            inline: false,
+          },
+          {
+            name: "📧 Email Content",
+            value: `\`\`\`${emailContent.substring(0, 500)}${emailContent.length > 500 ? "..." : ""}\`\`\``,
+            inline: false,
+          },
+        ]
+
+        if (attachments.length > 0) {
+          previewFields.push({
+            name: "📎 Attachments",
+            value: attachments.map((att) => `• ${att.name} (${(att.size / 1024).toFixed(1)}KB)`).join("\n"),
+            inline: false,
+          })
+        }
+
         await interaction.reply({
           content: "📢 **Announcement Ready!**",
           embeds: [
             {
               title: "📢 Announcement Preview",
-              fields: [
-                {
-                  name: "💬 Discord",
-                  value: `\`\`\`${discordContent.substring(0, 1000)}\`\`\``,
-                  inline: false,
-                },
-                {
-                  name: "📧 Email Subject",
-                  value: `\`\`\`${emailSubject}\`\`\``,
-                  inline: false,
-                },
-                {
-                  name: "📧 Email Content",
-                  value: `\`\`\`${emailContent.substring(0, 500)}${emailContent.length > 500 ? "..." : ""}\`\`\``,
-                  inline: false,
-                },
-              ],
+              fields: previewFields,
               color: 0x00ff00,
               footer: { text: "Use the buttons below to edit or send!" },
             },
@@ -590,7 +638,19 @@ export default {
               }
 
               console.log(`Found announcement channel: ${announcementChannel.name}`)
-              await announcementChannel.send(announcement.discordContent)
+
+              const messageOptions = {
+                content: announcement.discordContent,
+              }
+
+              if (announcement.attachments && announcement.attachments.length > 0) {
+                messageOptions.files = announcement.attachments.map((att) => ({
+                  attachment: att.url,
+                  name: att.name,
+                }))
+              }
+
+              await announcementChannel.send(messageOptions)
               discordSuccess = true
               console.log("Discord announcement sent successfully")
             } catch (error) {
@@ -611,7 +671,12 @@ export default {
               }
 
               console.log(`Found ${emails.length} emails`)
-              await sendEmails(announcement.emailSubject, announcement.emailContent, emails)
+              await sendEmails(
+                announcement.emailSubject,
+                announcement.emailContent,
+                emails,
+                announcement.attachments || [],
+              )
               emailSuccess = true
               console.log("Email announcement sent successfully")
             } catch (error) {
