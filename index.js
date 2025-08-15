@@ -11,6 +11,16 @@ dotenv.config()
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
+console.log("[v0] Checking environment variables...")
+if (!process.env.DISCORD_TOKEN) {
+  console.error("❌ DISCORD_TOKEN is missing! Please add it to your environment variables.")
+  process.exit(1)
+}
+if (!process.env.INTRODUCTION_CHANNEL_ID) {
+  console.warn("⚠️ INTRODUCTION_CHANNEL_ID is missing. Role assignment won't work.")
+}
+console.log("✅ Environment variables checked")
+
 // Express server setup
 const app = express()
 const port = process.env.PORT || 3000
@@ -24,9 +34,11 @@ app.listen(port, () => {
 })
 
 // Keep-alive mechanism
-setInterval(() => {
-  fetch(process.env.RENDER_EXTERNAL_URL).then(() => console.log("Kept alive"))
-}, 840000) // 14 minutes
+if (process.env.RENDER_EXTERNAL_URL) {
+  setInterval(() => {
+    fetch(process.env.RENDER_EXTERNAL_URL).then(() => console.log("Kept alive"))
+  }, 840000) // 14 minutes
+}
 
 // Configuration
 const client = new Client({
@@ -36,21 +48,44 @@ client.commands = new Collection()
 const token = process.env.DISCORD_TOKEN
 const INTRODUCTION_CHANNEL_ID = process.env.INTRODUCTION_CHANNEL_ID
 
-// Load Commands
+console.log("[v0] Loading commands...")
 const commandFiles = fs.readdirSync("./commands").filter((file) => file.endsWith(".js"))
 for (const file of commandFiles) {
-  const command = await import(`./commands/${file}`)
-  client.commands.set(command.default.data.name, command.default)
+  try {
+    const command = await import(`./commands/${file}`)
+    if (command.default && command.default.data && command.default.data.name) {
+      client.commands.set(command.default.data.name, command.default)
+      console.log(`✅ Loaded command: ${command.default.data.name}`)
+    } else {
+      console.warn(`⚠️ Command file ${file} doesn't export properly structured command`)
+    }
+  } catch (error) {
+    console.error(`❌ Error loading command ${file}:`, error)
+  }
 }
+console.log(`📦 Loaded ${client.commands.size} commands total`)
 
 // Register Commands
 client.once(Events.ClientReady, async () => {
-  const guild = client.guilds.cache.get("768632778396139550")
-  if (guild) {
-    await guild.commands.set(client.commands.map((command) => command.data))
-    console.log(`Slash commands registered in ${guild.name}`)
+  console.log(`🤖 Bot logged in as ${client.user.tag}`)
+
+  try {
+    // Try to register commands globally first (takes up to 1 hour to update)
+    await client.application.commands.set(client.commands.map((command) => command.data))
+    console.log("✅ Global slash commands registered")
+
+    // Also register to specific guild for instant updates (if guild ID is provided)
+    const guildId = process.env.GUILD_ID || "768632778396139550"
+    const guild = client.guilds.cache.get(guildId)
+    if (guild) {
+      await guild.commands.set(client.commands.map((command) => command.data))
+      console.log(`✅ Guild slash commands registered in ${guild.name}`)
+    } else {
+      console.warn(`⚠️ Could not find guild with ID: ${guildId}`)
+    }
+  } catch (error) {
+    console.error("❌ Error registering commands:", error)
   }
-  console.log(`Logged in as ${client.user.tag}`)
 })
 
 // Interaction Event
@@ -141,5 +176,9 @@ client.on(Events.MessageCreate, async (message) => {
 // Error Handling
 client.on(Events.Error, console.error)
 
-// Login
-client.login(process.env.DISCORD_TOKEN)
+console.log("[v0] Attempting to login to Discord...")
+client.login(token).catch((error) => {
+  console.error("❌ Failed to login to Discord:", error)
+  console.error("Please check your DISCORD_TOKEN environment variable")
+  process.exit(1)
+})
