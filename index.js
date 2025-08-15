@@ -177,6 +177,38 @@ client.on(Events.MessageCreate, async (message) => {
 // Error Handling
 client.on(Events.Error, console.error)
 
+async function testDiscordConnectivity() {
+  console.log("[v0] Testing Discord API connectivity...")
+
+  try {
+    // Test Discord API endpoint
+    const response = await fetch("https://discord.com/api/v10/gateway", {
+      timeout: 10000,
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      console.log("✅ Discord API is reachable")
+      console.log("[v0] Gateway URL:", data.url)
+    } else {
+      console.error("❌ Discord API returned error:", response.status, response.statusText)
+    }
+  } catch (error) {
+    console.error("❌ Cannot reach Discord API:", error.message)
+    console.error("This indicates network connectivity issues between Render and Discord")
+  }
+
+  try {
+    // Test Discord gateway connectivity
+    const gatewayResponse = await fetch("https://gateway.discord.gg", {
+      timeout: 10000,
+    })
+    console.log("✅ Discord Gateway is reachable")
+  } catch (error) {
+    console.error("❌ Cannot reach Discord Gateway:", error.message)
+  }
+}
+
 console.log("[v0] Attempting to login to Discord...")
 console.log("[v0] Token length:", process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.length : "undefined")
 console.log(
@@ -184,13 +216,16 @@ console.log(
   process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.substring(0, 10) + "..." : "undefined",
 )
 
+await testDiscordConnectivity()
+
 // Add a timeout to detect if login is hanging
 const loginTimeout = setTimeout(() => {
   console.error("❌ Discord login timed out after 30 seconds")
   console.error("This usually means:")
-  console.error("1. Invalid Discord token")
-  console.error("2. Network connectivity issues")
-  console.error("3. Discord API is down")
+  console.error("1. Network connectivity issues between Render and Discord")
+  console.error("2. Discord's gateway is not responding")
+  console.error("3. Render's IP might be rate-limited by Discord")
+  console.error("4. Invalid Discord token (but token format looks correct)")
   process.exit(1)
 }, 30000)
 
@@ -204,6 +239,7 @@ client
     clearTimeout(loginTimeout)
     console.error("❌ Failed to login to Discord:", error)
     console.error("Error details:", error.message)
+    console.error("Error code:", error.code)
     console.error("Please check your DISCORD_TOKEN environment variable")
     console.error("Make sure the token is valid and the bot has proper permissions")
     process.exit(1)
