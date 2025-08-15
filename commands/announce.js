@@ -7,6 +7,7 @@ import {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  EmbedBuilder,
 } from "discord.js"
 import { google } from "googleapis"
 import nodemailer from "nodemailer"
@@ -254,15 +255,31 @@ export default {
           }
         }
 
-        // Immediately create a basic announcement without AI
-        const discordContent = `@everyone 🚨 **${topic}** 🚨\n\n${details || "More details coming soon!"} 🔧⚡`
+        const discordEmbed = new EmbedBuilder()
+          .setTitle(`🚨 ${topic}`)
+          .setDescription(details || "More details coming soon!")
+          .setColor(0xff6b35) // Engineering orange color
+          .addFields(
+            { name: "📍 Location", value: "Electronics Room", inline: true },
+            { name: "⏰ Time", value: "TBD", inline: true },
+            { name: "🎯 What to Bring", value: "TBD", inline: true },
+          )
+          .setFooter({
+            text: "Engineering Club • Stay tuned for updates!",
+            iconURL: "https://cdn.discordapp.com/emojis/🔧.png",
+          })
+          .setTimestamp()
+          .setThumbnail("https://drive.google.com/file/d/1FMf439DX_I-Up9Nww7x-ajlyuppcE_rZ/view?usp=sharing")
+
+        const discordContent = "@everyone"
         const emailSubject = `🛠️ Engineering Club: ${topic}`
         const emailContent = `Dear Engineering Club Members,\n\nWe have an important announcement about: ${topic}\n\n${details || "More details will be provided soon."}\n\nHere's what you need to know:\n- **When:** TBD\n- **Where:** Electronics room\n- **What to bring:** TBD\n\nStay tuned for more information!\n\nBest,\nEngineering Club Execs`
 
-        // Store announcement
+        // Store announcement with embed
         const announcementId = Date.now().toString()
         pendingAnnouncements.set(announcementId, {
           discordContent,
+          discordEmbed,
           emailSubject,
           emailContent,
           attachments,
@@ -309,8 +326,8 @@ export default {
 
         const previewFields = [
           {
-            name: "💬 Discord",
-            value: `\`\`\`${discordContent.substring(0, 1000)}\`\`\``,
+            name: "💬 Discord Embed",
+            value: `**Title:** ${discordEmbed.data.title}\n**Description:** ${discordEmbed.data.description}\n**Fields:** ${discordEmbed.data.fields.map((f) => `${f.name}: ${f.value}`).join(", ")}`,
             inline: false,
           },
           {
@@ -583,7 +600,7 @@ export default {
               .setCustomId("discord_content")
               .setLabel("Discord Content")
               .setStyle(TextInputStyle.Paragraph)
-              .setValue(announcement.discordContent)
+              .setValue(JSON.stringify(announcement.discordEmbed.data))
               .setMaxLength(2000)
 
             modal.addComponents(new ActionRowBuilder().addComponents(textInput))
@@ -641,9 +658,18 @@ export default {
 
               const messageOptions = {
                 content: announcement.discordContent,
+                embeds: [announcement.discordEmbed],
               }
 
               if (announcement.attachments && announcement.attachments.length > 0) {
+                const imageAttachment = announcement.attachments.find(
+                  (att) => att.contentType && att.contentType.startsWith("image/"),
+                )
+
+                if (imageAttachment) {
+                  messageOptions.embeds[0].setImage(imageAttachment.url)
+                }
+
                 messageOptions.files = announcement.attachments.map((att) => ({
                   attachment: att.url,
                   name: att.name,
@@ -780,7 +806,8 @@ export default {
       }
 
       if (type === "discord") {
-        announcement.discordContent = interaction.fields.getTextInputValue("discord_content")
+        const embedData = JSON.parse(interaction.fields.getTextInputValue("discord_content"))
+        announcement.discordEmbed = new EmbedBuilder(embedData)
       } else if (type === "email") {
         announcement.emailSubject = interaction.fields.getTextInputValue("email_subject")
         announcement.emailContent = interaction.fields.getTextInputValue("email_content")
@@ -830,8 +857,8 @@ export default {
             title: "📢 Updated Preview",
             fields: [
               {
-                name: "💬 Discord",
-                value: `\`\`\`${announcement.discordContent}\`\`\``,
+                name: "💬 Discord Embed",
+                value: `**Title:** ${announcement.discordEmbed.data.title}\n**Description:** ${announcement.discordEmbed.data.description}`,
                 inline: false,
               },
               {
