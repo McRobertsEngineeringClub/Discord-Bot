@@ -23,7 +23,7 @@ console.log("✅ Environment variables checked")
 
 // Express server setup
 const app = express()
-const port = process.env.PORT || 3000
+const port = process.env.PORT || 8080
 
 app.get("/", (req, res) => {
   res.send("Discord bot is running!")
@@ -41,7 +41,7 @@ client.commands = new Collection()
 const token = process.env.DISCORD_TOKEN
 const INTRODUCTION_CHANNEL_ID = process.env.INTRODUCTION_CHANNEL_ID
 
-console.log("[v0] Loading commands...")
+console.log("Loading commands...")
 const commandFiles = fs.readdirSync("./commands").filter((file) => file.endsWith(".js"))
 for (const file of commandFiles) {
   try {
@@ -176,11 +176,13 @@ console.log(
   process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.substring(0, 10) + "..." : "undefined",
 )
 
-try {
-  await client.login(token)
-  console.log("✅ Discord login successful!")
-} catch (error) {
-  console.error("❌ Failed to login to Discord:", error.message)
-  console.error("Please check your DISCORD_TOKEN environment variable")
-  process.exit(1)
-}
+client
+  .login(token)
+  .then(() => {
+    console.log("✅ Discord login successful!")
+  })
+  .catch((error) => {
+    console.error("❌ Failed to login to Discord:", error.message)
+    console.error("Please check your DISCORD_TOKEN environment variable")
+    process.exit(1)
+  })
