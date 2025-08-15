@@ -257,12 +257,12 @@ export default {
 
         const discordEmbed = new EmbedBuilder()
           .setTitle(`🚨 ${topic}`)
-          .setDescription(details || "More details coming soon!")
+          .setDescription(`## ${details || "More details coming soon!"}\n\u200B`)
           .setColor(0x5dade2) // Light blue color to match logo
           .addFields(
-            { name: "\n📍 **Location**", value: "Electronics Room\n\u200B", inline: true },
-            { name: "\n⏰ **Time**", value: "TBD\n\u200B", inline: true },
-            { name: "\n🎯 **What to Bring**", value: "TBD\n\u200B", inline: true },
+            { name: "\n## 📍 **Location**", value: "### Electronics Room\n\u200B\n\u200B", inline: true },
+            { name: "\n## ⏰ **Time**", value: "### TBD\n\u200B\n\u200B", inline: true },
+            { name: "\n## 🎯 **What to Bring**", value: "### TBD\n\u200B\n\u200B", inline: true },
           )
           .setFooter({
             text: "Engineering Club • Stay tuned for updates!",
@@ -270,6 +270,13 @@ export default {
           })
           .setTimestamp()
           .setThumbnail("https://drive.google.com/uc?export=view&id=1FMf439DX_I-Up9Nww7x-ajlyuppcE_rZ")
+
+        if (attachments.length > 0) {
+          const imageAttachment = attachments.find((att) => att.contentType && att.contentType.startsWith("image/"))
+          if (imageAttachment) {
+            discordEmbed.setImage(imageAttachment.url)
+          }
+        }
 
         const discordContent = "@everyone"
         const emailSubject = `🛠️ Engineering Club: ${topic}`
@@ -334,8 +341,8 @@ export default {
 
         const previewFields = [
           {
-            name: "💬 Discord Embed",
-            value: `**Title:** ${discordEmbed.data.title}\n**Description:** ${discordEmbed.data.description}\n**Fields:** ${discordEmbed.data.fields.map((f) => `${f.name}: ${f.value}`).join(", ")}`,
+            name: "💬 Discord Message",
+            value: `**Content:** ${discordContent}\n**Embed Title:** ${discordEmbed.data.title}\n**Description:** ${discordEmbed.data.description}\n**Fields:** ${discordEmbed.data.fields.map((f) => `${f.name}: ${f.value}`).join(", ")}`,
             inline: false,
           },
           {
@@ -605,7 +612,7 @@ export default {
         case "test": {
           if (type === "preview") {
             await interaction.reply({
-              content: "🧪 **Test Preview** - This is how your announcement will look:",
+              content: `${announcement.discordContent} 🧪 **Test Preview** - This is how your announcement will look:`,
               embeds: [announcement.discordEmbed],
               files:
                 announcement.attachments && announcement.attachments.length > 0
@@ -895,8 +902,8 @@ export default {
             title: "📢 Updated Preview",
             fields: [
               {
-                name: "💬 Discord Embed",
-                value: `**Title:** ${announcement.discordEmbed.data.title}\n**Description:** ${announcement.discordEmbed.data.description}`,
+                name: "💬 Discord Message",
+                value: `**Content:** ${announcement.discordContent}\n**Embed Title:** ${announcement.discordEmbed.data.title}\n**Description:** ${announcement.discordEmbed.data.description}`,
                 inline: false,
               },
               {
