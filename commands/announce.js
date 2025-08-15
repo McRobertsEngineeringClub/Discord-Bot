@@ -260,16 +260,16 @@ export default {
           .setDescription(details || "More details coming soon!")
           .setColor(0x5dade2) // Light blue color to match logo
           .addFields(
-            { name: "📍 Location", value: "Electronics Room", inline: true },
-            { name: "⏰ Time", value: "TBD", inline: true },
-            { name: "🎯 What to Bring", value: "TBD", inline: true },
+            { name: "\n📍 **Location**", value: "Electronics Room\n\u200B", inline: true },
+            { name: "\n⏰ **Time**", value: "TBD\n\u200B", inline: true },
+            { name: "\n🎯 **What to Bring**", value: "TBD\n\u200B", inline: true },
           )
           .setFooter({
             text: "Engineering Club • Stay tuned for updates!",
             iconURL: "https://cdn.discordapp.com/emojis/🔧.png",
           })
           .setTimestamp()
-          .setThumbnail("https://placeholder.svg?height=80&width=80&query=engineering+club+logo+light+blue")
+          .setThumbnail("https://drive.google.com/uc?export=view&id=1FMf439DX_I-Up9Nww7x-ajlyuppcE_rZ")
 
         const discordContent = "@everyone"
         const emailSubject = `🛠️ Engineering Club: ${topic}`
@@ -353,7 +353,11 @@ export default {
         if (attachments.length > 0) {
           previewFields.push({
             name: "📎 Attachments",
-            value: attachments.map((att) => `• ${att.name} (${(att.size / 1024).toFixed(1)}KB)`).join("\n"),
+            value: attachments
+              .map(
+                (att) => `• **${att.name}** (${(att.size / 1024).toFixed(1)}KB) - ${att.contentType || "Unknown type"}`,
+              )
+              .join("\n"),
             inline: false,
           })
         }
@@ -693,7 +697,7 @@ export default {
                 )
 
                 if (imageAttachment) {
-                  messageOptions.embeds[0].setImage(imageAttachment.url)
+                  announcement.discordEmbed.setImage(imageAttachment.url)
                 }
 
                 messageOptions.files = announcement.attachments.map((att) => ({
