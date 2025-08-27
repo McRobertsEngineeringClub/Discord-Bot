@@ -44,7 +44,7 @@ export default {
       // Use default club GIF if no URL provided or "default" specified
       if (!avatarUrl || avatarUrl.toLowerCase() === "default") {
         avatarUrl =
-          "https://i.imgur.com/pWRkR5p.mp4"
+          "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExaXdtc2prYWpsbWFhMjN5dTJybWIyb2o2cjkxbDJpMGY1dWRmY2R6eCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/Cu9vP4uAFqRyzQvtoj/giphy.gif"
       }
 
       try {
