@@ -7,7 +7,6 @@ import {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  EmbedBuilder,
 } from "discord.js"
 import { google } from "googleapis"
 import nodemailer from "nodemailer"
@@ -620,14 +619,25 @@ export default {
               .setCustomId(`discord_edit_modal_${announcementId}`)
               .setTitle("Edit Discord Announcement")
 
-            const textInput = new TextInputBuilder()
-              .setCustomId("discord_content")
-              .setLabel("Discord Content")
-              .setStyle(TextInputStyle.Paragraph)
-              .setValue(JSON.stringify(announcement.discordEmbed.data))
-              .setMaxLength(2000)
+            const topicInput = new TextInputBuilder()
+              .setCustomId("discord_topic")
+              .setLabel("Main Topic/Event")
+              .setStyle(TextInputStyle.Short)
+              .setValue(announcement.discordEmbed.data.title || "")
+              .setMaxLength(256)
 
-            modal.addComponents(new ActionRowBuilder().addComponents(textInput))
+            const detailsInput = new TextInputBuilder()
+              .setCustomId("discord_details")
+              .setLabel("Additional Details (Optional)")
+              .setStyle(TextInputStyle.Paragraph)
+              .setValue(announcement.discordEmbed.data.description || "")
+              .setMaxLength(2000)
+              .setRequired(false)
+
+            modal.addComponents(
+              new ActionRowBuilder().addComponents(topicInput),
+              new ActionRowBuilder().addComponents(detailsInput),
+            )
             await interaction.showModal(modal)
           } else if (type === "email") {
             const modal = new ModalBuilder()
@@ -835,8 +845,16 @@ export default {
       }
 
       if (type === "discord") {
-        const embedData = JSON.parse(interaction.fields.getTextInputValue("discord_content"))
-        announcement.discordEmbed = new EmbedBuilder(embedData)
+        const topic = interaction.fields.getTextInputValue("discord_topic")
+        const details = interaction.fields.getTextInputValue("discord_details") || ""
+
+        // Recreate the embed with new content
+        announcement.discordEmbed = createAnnouncementEmbed(topic, details, announcement.attachments?.length || 0)
+        announcement.discordContent = `@everyone **NEW ANNOUNCEMENT**`
+
+        // Update email content to match
+        announcement.emailSubject = `Engineering Club: ${topic}`
+        announcement.emailContent = `Dear Engineering Club Members,\n\nWe have an important announcement about: ${topic}\n\n${details || "More details will be provided soon."}\n\nBest,\nEngineering Club Execs`
       } else if (type === "email") {
         announcement.emailSubject = interaction.fields.getTextInputValue("email_subject")
         announcement.emailContent = interaction.fields.getTextInputValue("email_content")
@@ -881,29 +899,38 @@ export default {
           .setStyle(ButtonStyle.Danger),
       )
 
+      const previewFields = [
+        {
+          name: "Discord Preview",
+          value: `**Topic:** ${announcement.discordEmbed.data.title}\n**Details:** ${announcement.discordEmbed.data.description || "More details coming soon!"}`,
+          inline: false,
+        },
+        {
+          name: "Email Preview",
+          value: `**Subject:** ${announcement.emailSubject}\n**Content:** ${announcement.emailContent.substring(0, 150)}...`,
+          inline: false,
+        },
+      ]
+
+      if (announcement.attachments && announcement.attachments.length > 0) {
+        previewFields.push({
+          name: "Attachments",
+          value: announcement.attachments
+            .map((att) => `**${att.name}** (${(att.size / 1024).toFixed(1)}KB)`)
+            .join("\n"),
+          inline: false,
+        })
+      }
+
       await interaction.update({
+        content: "**ANNOUNCEMENT CONTROL PANEL**",
         embeds: [
-          {
-            title: "📢 Updated Preview",
-            fields: [
-              {
-                name: "💬 Discord Message",
-                value: `**Content:** ${announcement.discordContent}\n**Embed Title:** ${announcement.discordEmbed.data.title}\n**Description:** ${announcement.discordEmbed.data.description}`,
-                inline: false,
-              },
-              {
-                name: "📧 Email Subject",
-                value: `\`\`\`${announcement.emailSubject}\`\`\``,
-                inline: false,
-              },
-              {
-                name: "📧 Email Content",
-                value: `\`\`\`${announcement.emailContent.substring(0, 500)}${announcement.emailContent.length > 500 ? "..." : ""}\`\`\``,
-                inline: false,
-              },
-            ],
-            color: 0x00ff00,
-          },
+          createStatusEmbed(
+            "Announcement Updated",
+            "Your changes have been saved! Use the buttons below to send.",
+            "success",
+            previewFields,
+          ),
         ],
         components: [row1, row2, row3],
       })
@@ -911,7 +938,7 @@ export default {
       console.error("Modal submit error:", error)
       try {
         await interaction.reply({
-          content: `❌ Error: ${error.message}`,
+          embeds: [createStatusEmbed("Update Error", error.message, "error")],
           ephemeral: true,
         })
       } catch (replyError) {
