@@ -5,6 +5,8 @@ import { dirname } from "path"
 import express from "express"
 import dotenv from "dotenv"
 import fetch from "node-fetch"
+import { handleAnnouncementButtons } from "./handlers/button-handler.js"
+import { handleAnnouncementInteraction } from "./handlers/announcement-handler.js"
 
 dotenv.config({ path: ".env" })
 dotenv.config({ path: "local.env" })
@@ -122,7 +124,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
     }
   } else if (interaction.isButton()) {
-    // Handle button interactions for announce command
+    if (
+      interaction.customId.startsWith("announce_") ||
+      interaction.customId.startsWith("send_announcement") ||
+      interaction.customId.startsWith("edit_announcement")
+    ) {
+      try {
+        await handleAnnouncementInteraction(interaction)
+        return
+      } catch (error) {
+        console.error("Enhanced announcement button error:", error)
+      }
+    }
+
+    const handled = await handleAnnouncementButtons(interaction)
+    if (handled) return
+
+    // Handle button interactions for announce command (legacy)
     const announceCommand = client.commands.get("announce")
     if (announceCommand && announceCommand.handleButtonInteraction) {
       try {
@@ -132,6 +150,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
     }
   } else if (interaction.isModalSubmit()) {
+    if (interaction.customId.startsWith("modal_announce_")) {
+      try {
+        await handleAnnouncementInteraction(interaction)
+        return
+      } catch (error) {
+        console.error("Enhanced announcement modal error:", error)
+      }
+    }
+
     // Handle modal submissions for announce command
     const announceCommand = client.commands.get("announce")
     if (announceCommand && announceCommand.handleModalSubmit) {
