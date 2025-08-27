@@ -14,7 +14,7 @@ export default {
   async execute(interaction) {
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
       return interaction.reply({
-        embeds: [createStatusEmbed("ACCESS DENIED", "You need Manage Roles permission to use this command", "error")],
+        embeds: [createStatusEmbed("Access Denied", "You need Manage Roles permission to use this command", "error")],
         ephemeral: true,
       })
     }
@@ -26,7 +26,7 @@ export default {
       return interaction.reply({
         embeds: [
           createStatusEmbed(
-            "ROLE HIERARCHY ERROR",
+            "Role Hierarchy Error",
             "You cannot assign a role equal to or higher than your highest role",
             "error",
           ),

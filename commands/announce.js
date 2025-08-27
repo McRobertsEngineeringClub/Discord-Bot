@@ -232,7 +232,7 @@ export default {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
         await interaction.reply({
           embeds: [
-            createStatusEmbed("ACCESS DENIED", "You need Manage Messages permission to create announcements", "error"),
+            createStatusEmbed("Access Denied", "You need Manage Messages permission to create announcements", "error"),
           ],
           ephemeral: true,
         })
@@ -242,6 +242,8 @@ export default {
       const subcommand = interaction.options.getSubcommand()
 
       if (subcommand === "create") {
+        await interaction.deferReply({ ephemeral: true })
+
         const topic = interaction.options.getString("topic")
         const details = interaction.options.getString("details") || ""
 
@@ -259,10 +261,10 @@ export default {
         }
 
         const discordEmbed = createAnnouncementEmbed(topic, details, attachments.length)
-        const discordContent = `@everyone ${CLUB_THEME.emojis.announce} **NEW ANNOUNCEMENT** ${CLUB_THEME.emojis.announce}`
+        const discordContent = `@everyone **NEW ANNOUNCEMENT**`
 
-        const emailSubject = `${CLUB_THEME.emojis.wrench} Engineering Club: ${topic}`
-        const emailContent = `Dear Engineering Club Members,\n\nWe have an important announcement about: ${topic}\n\n${details || "More details will be provided soon."}\n\nHere's what you need to know:\n- **When:** TBD\n- **Where:** Electronics room\n- **What to bring:** TBD\n\nStay tuned for more information!\n\nBest,\nEngineering Club Execs`
+        const emailSubject = `Engineering Club: ${topic}`
+        const emailContent = `Dear Engineering Club Members,\n\nWe have an important announcement about: ${topic}\n\n${details || "More details will be provided soon."}\n\nBest,\nEngineering Club Execs`
 
         // Store announcement with embed
         const announcementId = Date.now().toString()
@@ -280,80 +282,71 @@ export default {
           new ButtonBuilder()
             .setCustomId(`edit_discord_${announcementId}`)
             .setLabel("Edit Discord")
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji(CLUB_THEME.emojis.discord),
+            .setStyle(ButtonStyle.Primary),
           new ButtonBuilder()
             .setCustomId(`edit_email_${announcementId}`)
             .setLabel("Edit Email")
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji(CLUB_THEME.emojis.email),
+            .setStyle(ButtonStyle.Primary),
           new ButtonBuilder()
             .setCustomId(`test_preview_${announcementId}`)
-            .setLabel("Test Preview")
-            .setStyle(ButtonStyle.Secondary)
-            .setEmoji("👀"),
+            .setLabel("Preview")
+            .setStyle(ButtonStyle.Secondary),
         )
 
         const row2 = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId(`send_discord_${announcementId}`)
-            .setLabel("Send Discord Only")
-            .setStyle(ButtonStyle.Success)
-            .setEmoji(CLUB_THEME.emojis.discord),
+            .setLabel("Send to Discord")
+            .setStyle(ButtonStyle.Success),
           new ButtonBuilder()
             .setCustomId(`send_email_${announcementId}`)
-            .setLabel("Send Email Only")
-            .setStyle(ButtonStyle.Success)
-            .setEmoji(CLUB_THEME.emojis.email),
+            .setLabel("Send to Email")
+            .setStyle(ButtonStyle.Success),
           new ButtonBuilder()
             .setCustomId(`send_both_${announcementId}`)
             .setLabel("Send Both")
-            .setStyle(ButtonStyle.Success)
-            .setEmoji(CLUB_THEME.emojis.rocket),
+            .setStyle(ButtonStyle.Success),
         )
 
         const row3 = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId(`cancel_announcement_${announcementId}`)
             .setLabel("Cancel")
-            .setStyle(ButtonStyle.Danger)
-            .setEmoji(CLUB_THEME.emojis.error),
+            .setStyle(ButtonStyle.Danger),
         )
 
-        const previewEmbed = createStatusEmbed(
-          "ANNOUNCEMENT READY",
-          "Your announcement is ready to send! Use the buttons below to edit or send.",
-          "success",
-          [
-            {
-              name: `${CLUB_THEME.emojis.discord} Discord Preview`,
-              value: `**Content:** ${discordContent}\n**Topic:** ${topic}\n**Details:** ${details || "More details coming soon!"}`,
-              inline: false,
-            },
-            {
-              name: `${CLUB_THEME.emojis.email} Email Preview`,
-              value: `**Subject:** ${emailSubject}\n**Content:** ${emailContent.substring(0, 200)}...`,
-              inline: false,
-            },
-            ...(attachments.length > 0
-              ? [
-                  {
-                    name: `${CLUB_THEME.emojis.circuit} Attachments`,
-                    value: attachments
-                      .map((att) => `${CLUB_THEME.emojis.sparkles} **${att.name}** (${(att.size / 1024).toFixed(1)}KB)`)
-                      .join("\n"),
-                    inline: false,
-                  },
-                ]
-              : []),
+        const previewFields = [
+          {
+            name: "Discord Preview",
+            value: `**Topic:** ${topic}\n**Details:** ${details || "More details coming soon!"}`,
+            inline: false,
+          },
+          {
+            name: "Email Preview",
+            value: `**Subject:** ${emailSubject}\n**Content:** ${emailContent.substring(0, 150)}...`,
+            inline: false,
+          },
+        ]
+
+        if (attachments.length > 0) {
+          previewFields.push({
+            name: "Attachments",
+            value: attachments.map((att) => `**${att.name}** (${(att.size / 1024).toFixed(1)}KB)`).join("\n"),
+            inline: false,
+          })
+        }
+
+        await interaction.editReply({
+          content: "**ANNOUNCEMENT CONTROL PANEL**",
+          embeds: [
+            createStatusEmbed(
+              "Announcement Ready",
+              "Your announcement is ready to send! Use the buttons below to edit or send.",
+              "success",
+              previewFields,
+            ),
           ],
-        )
-
-        await interaction.reply({
-          content: `${CLUB_THEME.emojis.announce} **ANNOUNCEMENT CONTROL PANEL** ${CLUB_THEME.emojis.announce}`,
-          embeds: [previewEmbed],
           components: [row1, row2, row3],
-          ephemeral: true,
         })
       } else if (subcommand === "test-emails") {
         await interaction.deferReply({ ephemeral: true })
@@ -550,7 +543,7 @@ export default {
     } catch (error) {
       console.error("Command error:", error)
       try {
-        const errorEmbed = createStatusEmbed("COMMAND ERROR", error.message, "error")
+        const errorEmbed = createStatusEmbed("Command Error", error.message, "error")
         if (!interaction.replied && !interaction.deferred) {
           await interaction.reply({ embeds: [errorEmbed], ephemeral: true })
         } else {
@@ -562,7 +555,6 @@ export default {
     }
   },
 
-  // Handle button interactions
   async handleButtonInteraction(interaction) {
     try {
       console.log(`Button interaction: ${interaction.customId} by ${interaction.user.tag}`)
@@ -574,7 +566,7 @@ export default {
       const announcement = pendingAnnouncements.get(announcementId)
       if (!announcement) {
         await interaction.reply({
-          embeds: [createStatusEmbed("ANNOUNCEMENT EXPIRED", "This announcement has expired or been deleted", "error")],
+          embeds: [createStatusEmbed("Announcement Expired", "This announcement has expired or been deleted", "error")],
           ephemeral: true,
         })
         return
@@ -585,7 +577,7 @@ export default {
         !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)
       ) {
         await interaction.reply({
-          embeds: [createStatusEmbed("ACCESS DENIED", "You can only edit your own announcements", "error")],
+          embeds: [createStatusEmbed("Access Denied", "You can only edit your own announcements", "error")],
           ephemeral: true,
         })
         return
@@ -595,17 +587,16 @@ export default {
         case "test": {
           if (type === "preview") {
             await interaction.reply({
-              content: `${announcement.discordContent} ${CLUB_THEME.emojis.sparkles} **TEST PREVIEW** - This is how your announcement will look:`,
+              content: announcement.discordContent,
               embeds: [announcement.discordEmbed],
               ephemeral: false,
             })
 
-            // Send attachments as separate messages after the embed
             if (announcement.attachments && announcement.attachments.length > 0) {
               for (const attachment of announcement.attachments) {
                 try {
                   await interaction.followUp({
-                    content: `${CLUB_THEME.emojis.circuit} **Attachment:** ${attachment.name}`,
+                    content: `**Attachment:** ${attachment.name}`,
                     files: [
                       {
                         attachment: attachment.url,
@@ -683,7 +674,6 @@ export default {
           let discordError = null
           let emailError = null
 
-          // Send Discord announcement
           if (type === "discord" || type === "both") {
             try {
               console.log("Attempting to send Discord announcement...")
@@ -700,12 +690,11 @@ export default {
                 embeds: [announcement.discordEmbed],
               })
 
-              // Send attachments as separate messages
               if (announcement.attachments && announcement.attachments.length > 0) {
                 for (const attachment of announcement.attachments) {
                   try {
                     await announcementChannel.send({
-                      content: `${CLUB_THEME.emojis.circuit} **Attachment:** ${attachment.name}`,
+                      content: `**Attachment:** ${attachment.name}`,
                       files: [
                         {
                           attachment: attachment.url,
@@ -727,7 +716,6 @@ export default {
             }
           }
 
-          // Send Email announcement
           if (type === "email" || type === "both") {
             try {
               console.log("Attempting to send email announcement...")
@@ -753,7 +741,6 @@ export default {
             }
           }
 
-          // Build result message with styled embed
           let resultType = "success"
           let resultMessage = ""
 
@@ -766,7 +753,6 @@ export default {
             resultMessage = emailSuccess ? "Email announcement sent successfully!" : `Email failed: ${emailError}`
             resultType = emailSuccess ? "success" : "error"
           } else {
-            // both
             const successes = []
             const failures = []
 
@@ -792,7 +778,6 @@ export default {
             embeds: [createStatusEmbed("SEND RESULTS", resultMessage, resultType)],
           })
 
-          // If everything was successful, clean up
           if (
             (type === "discord" && discordSuccess) ||
             (type === "email" && emailSuccess) ||
@@ -815,7 +800,7 @@ export default {
         case "cancel": {
           pendingAnnouncements.delete(announcementId)
           await interaction.update({
-            embeds: [createStatusEmbed("ANNOUNCEMENT CANCELLED", "Announcement has been cancelled", "error")],
+            embeds: [createStatusEmbed("Announcement Cancelled", "Announcement has been cancelled", "error")],
             components: [],
           })
           break
@@ -824,7 +809,7 @@ export default {
     } catch (error) {
       console.error("Button interaction error:", error)
       try {
-        const errorEmbed = createStatusEmbed("INTERACTION ERROR", error.message, "error")
+        const errorEmbed = createStatusEmbed("Interaction Error", error.message, "error")
         if (!interaction.replied && !interaction.deferred) {
           await interaction.reply({ embeds: [errorEmbed], ephemeral: true })
         } else {
@@ -836,7 +821,6 @@ export default {
     }
   },
 
-  // Handle modal submissions
   async handleModalSubmit(interaction) {
     try {
       const [type, , , announcementId] = interaction.customId.split("_")
@@ -864,44 +848,37 @@ export default {
         new ButtonBuilder()
           .setCustomId(`edit_discord_${announcementId}`)
           .setLabel("Edit Discord")
-          .setStyle(ButtonStyle.Primary)
-          .setEmoji("💬"),
+          .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId(`edit_email_${announcementId}`)
           .setLabel("Edit Email")
-          .setStyle(ButtonStyle.Primary)
-          .setEmoji("📧"),
+          .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId(`test_preview_${announcementId}`)
-          .setLabel("Test Preview")
-          .setStyle(ButtonStyle.Secondary)
-          .setEmoji("👀"),
+          .setLabel("Preview")
+          .setStyle(ButtonStyle.Secondary),
       )
 
       const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`send_discord_${announcementId}`)
-          .setLabel("Send Discord Only")
-          .setStyle(ButtonStyle.Success)
-          .setEmoji("💬"),
+          .setLabel("Send to Discord")
+          .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
           .setCustomId(`send_email_${announcementId}`)
-          .setLabel("Send Email Only")
-          .setStyle(ButtonStyle.Success)
-          .setEmoji("📧"),
+          .setLabel("Send to Email")
+          .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
           .setCustomId(`send_both_${announcementId}`)
           .setLabel("Send Both")
-          .setStyle(ButtonStyle.Success)
-          .setEmoji("🚀"),
+          .setStyle(ButtonStyle.Success),
       )
 
       const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`cancel_announcement_${announcementId}`)
           .setLabel("Cancel")
-          .setStyle(ButtonStyle.Danger)
-          .setEmoji("❌"),
+          .setStyle(ButtonStyle.Danger),
       )
 
       await interaction.update({
