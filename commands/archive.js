@@ -1,4 +1,5 @@
 import { SlashCommandBuilder, PermissionFlagsBits, ChannelType } from "discord.js"
+import { createArchiveEmbed, createStatusEmbed, CLUB_THEME } from "../lib/embedStyles.js"
 
 // Store scheduled tasks (in production, you'd want to use a database)
 let scheduledTasks = []
@@ -116,7 +117,9 @@ export default {
     // Check permissions
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
       return interaction.reply({
-        content: "You do not have permission to manage channels.",
+        embeds: [
+          createStatusEmbed("ACCESS DENIED", "You need Manage Channels permission to use this command", "error"),
+        ],
         ephemeral: true,
       })
     }
@@ -131,13 +134,25 @@ export default {
 
           if (!archivedCategory) {
             return interaction.reply({
-              content: 'Could not find an "Archived" category. Please create one first.',
+              embeds: [
+                createStatusEmbed(
+                  "CATEGORY NOT FOUND",
+                  'Could not find an "Archived" category. Please create one first.',
+                  "error",
+                ),
+              ],
               ephemeral: true,
             })
           }
 
           await channel.setParent(archivedCategory.id)
-          await interaction.reply(`📁 Successfully moved ${channel.name} to the Archived category.`)
+
+          const archiveEmbed = createArchiveEmbed(
+            "move",
+            channel.name,
+            `Channel moved to **${archivedCategory.name}** category`,
+          )
+          await interaction.reply({ embeds: [archiveEmbed] })
           break
         }
 
@@ -147,13 +162,25 @@ export default {
 
           if (!execsCategory) {
             return interaction.reply({
-              content: 'Could not find an "Execs" category. Please create one first.',
+              embeds: [
+                createStatusEmbed(
+                  "CATEGORY NOT FOUND",
+                  'Could not find an "Execs" category. Please create one first.',
+                  "error",
+                ),
+              ],
               ephemeral: true,
             })
           }
 
           await channel.setParent(execsCategory.id)
-          await interaction.reply(`📤 Successfully moved ${channel.name} to the Execs category.`)
+
+          const unarchiveEmbed = createArchiveEmbed(
+            "unarchive",
+            channel.name,
+            `Channel restored to **${execsCategory.name}** category`,
+          )
+          await interaction.reply({ embeds: [unarchiveEmbed] })
           break
         }
 
@@ -165,7 +192,7 @@ export default {
           const dateRegex = /^\d{4}-\d{2}-\d{2}$/
           if (!dateRegex.test(dateString)) {
             return interaction.reply({
-              content: "Invalid date format. Please use YYYY-MM-DD (e.g., 2024-06-22).",
+              embeds: [createStatusEmbed("INVALID DATE", "Please use YYYY-MM-DD format (e.g., 2024-06-22)", "error")],
               ephemeral: true,
             })
           }
@@ -174,7 +201,7 @@ export default {
 
           if (targetDate <= new Date()) {
             return interaction.reply({
-              content: "The scheduled date must be in the future.",
+              embeds: [createStatusEmbed("INVALID DATE", "The scheduled date must be in the future", "error")],
               ephemeral: true,
             })
           }
@@ -183,54 +210,59 @@ export default {
           const archivedCategory = findCategoryByName(interaction.guild, "archived")
           if (!archivedCategory) {
             return interaction.reply({
-              content: 'Could not find an "Archived" category. Please create one first.',
+              embeds: [
+                createStatusEmbed(
+                  "CATEGORY NOT FOUND",
+                  'Could not find an "Archived" category. Please create one first.',
+                  "error",
+                ),
+              ],
               ephemeral: true,
             })
           }
 
           const task = scheduleArchiving(channel.id, interaction.guild.id, targetDate, interaction.client)
 
-          await interaction.reply({
-            embeds: [
-              {
-                title: "⏰ Archiving Scheduled",
-                description: `Channel ${channel.name} will be automatically archived on ${dateString}`,
-                fields: [
-                  { name: "Task ID", value: task.id, inline: true },
-                  { name: "Channel", value: channel.toString(), inline: true },
-                  { name: "Scheduled Date", value: `<t:${Math.floor(targetDate.getTime() / 1000)}:F>`, inline: true },
-                ],
-                color: 0x00ff00,
-                timestamp: new Date(),
-              },
-            ],
+          const scheduleEmbed = createArchiveEmbed(
+            "schedule",
+            channel.name,
+            `Scheduled for <t:${Math.floor(targetDate.getTime() / 1000)}:F>`,
+          )
+          scheduleEmbed.addFields({
+            name: `${CLUB_THEME.emojis.gear} Task ID`,
+            value: `\`${task.id}\``,
+            inline: true,
           })
+
+          await interaction.reply({ embeds: [scheduleEmbed] })
           break
         }
 
         case "list-scheduled": {
           if (scheduledTasks.length === 0) {
-            return interaction.reply("No scheduled archiving tasks found.")
+            return interaction.reply({
+              embeds: [createStatusEmbed("NO SCHEDULED TASKS", "No scheduled archiving tasks found", "info")],
+            })
           }
 
-          const taskList = scheduledTasks
-            .map((task) => {
-              const channel = interaction.guild.channels.cache.get(task.channelId)
-              const channelName = channel ? channel.name : "Unknown Channel"
-              return `**ID:** ${task.id}\n**Channel:** ${channelName}\n**Date:** <t:${Math.floor(task.targetDate.getTime() / 1000)}:F>`
-            })
-            .join("\n\n")
-
-          await interaction.reply({
-            embeds: [
-              {
-                title: "📅 Scheduled Archiving Tasks",
-                description: taskList,
-                color: 0x0099ff,
-                timestamp: new Date(),
-              },
-            ],
+          const taskFields = scheduledTasks.map((task, index) => {
+            const channel = interaction.guild.channels.cache.get(task.channelId)
+            const channelName = channel ? channel.name : "Unknown Channel"
+            return {
+              name: `${CLUB_THEME.emojis.clock} Task ${index + 1}`,
+              value: `**ID:** \`${task.id}\`\n**Channel:** ${channelName}\n**Date:** <t:${Math.floor(task.targetDate.getTime() / 1000)}:F>`,
+              inline: true,
+            }
           })
+
+          const listEmbed = createStatusEmbed(
+            "SCHEDULED TASKS",
+            `Found ${scheduledTasks.length} scheduled archiving task${scheduledTasks.length > 1 ? "s" : ""}`,
+            "info",
+            taskFields,
+          )
+
+          await interaction.reply({ embeds: [listEmbed] })
           break
         }
 
@@ -240,7 +272,13 @@ export default {
 
           if (taskIndex === -1) {
             return interaction.reply({
-              content: "Task not found. Use `/archive list-scheduled` to see available tasks.",
+              embeds: [
+                createStatusEmbed(
+                  "TASK NOT FOUND",
+                  "Task not found. Use `/archive list-scheduled` to see available tasks.",
+                  "error",
+                ),
+              ],
               ephemeral: true,
             })
           }
@@ -248,16 +286,27 @@ export default {
           const canceledTask = scheduledTasks.splice(taskIndex, 1)[0]
           const channel = interaction.guild.channels.cache.get(canceledTask.channelId)
 
-          await interaction.reply(
-            `❌ Canceled scheduled archiving for ${channel ? channel.name : "Unknown Channel"} (Task ID: ${taskId})`,
+          const cancelEmbed = createStatusEmbed(
+            "TASK CANCELLED",
+            `Canceled scheduled archiving for **${channel ? channel.name : "Unknown Channel"}**`,
+            "success",
+            [{ name: `${CLUB_THEME.emojis.gear} Task ID`, value: `\`${taskId}\``, inline: true }],
           )
+
+          await interaction.reply({ embeds: [cancelEmbed] })
           break
         }
       }
     } catch (error) {
       console.error("Archive command error:", error)
       await interaction.reply({
-        content: "An error occurred while executing the command. Please check my permissions and try again.",
+        embeds: [
+          createStatusEmbed(
+            "COMMAND ERROR",
+            "An error occurred while executing the command. Please check my permissions and try again.",
+            "error",
+          ),
+        ],
         ephemeral: true,
       })
     }

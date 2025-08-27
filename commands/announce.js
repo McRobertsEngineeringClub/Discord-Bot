@@ -12,6 +12,7 @@ import {
 import { google } from "googleapis"
 import nodemailer from "nodemailer"
 import fetch from "node-fetch"
+import { createAnnouncementEmbed, createStatusEmbed, CLUB_THEME } from "../lib/embedStyles.js"
 
 // Store pending announcements
 const pendingAnnouncements = new Map()
@@ -230,7 +231,9 @@ export default {
       // Check permissions first
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
         await interaction.reply({
-          content: "❌ No permission to create announcements.",
+          embeds: [
+            createStatusEmbed("ACCESS DENIED", "You need Manage Messages permission to create announcements", "error"),
+          ],
           ephemeral: true,
         })
         return
@@ -255,24 +258,10 @@ export default {
           }
         }
 
-        const discordEmbed = new EmbedBuilder()
-          .setTitle(`🚨 ${topic}`)
-          .setDescription(`# ${details || "More details coming soon!"}\n\u200B\n\u200B`)
-          .setColor(0x5dade2) // Light blue color to match logo
-          .addFields(
-            { name: "\n# 📍 **Location**", value: "# Electronics Room\n\u200B\n\u200B\n\u200B", inline: true },
-            { name: "\n# ⏰ **Time**", value: "# TBD\n\u200B\n\u200B\n\u200B", inline: true },
-            { name: "\n# 🎯 **What to Bring**", value: "# TBD\n\u200B\n\u200B\n\u200B", inline: true },
-          )
-          .setFooter({
-            text: "Engineering Club • Stay tuned for updates!",
-            iconURL: "https://cdn.discordapp.com/emojis/🔧.png",
-          })
-          .setTimestamp()
-          .setThumbnail("https://drive.google.com/uc?export=view&id=1FMf439DX_I-Up9Nww7x-ajlyuppcE_rZ")
+        const discordEmbed = createAnnouncementEmbed(topic, details, attachments.length)
+        const discordContent = `@everyone ${CLUB_THEME.emojis.announce} **NEW ANNOUNCEMENT** ${CLUB_THEME.emojis.announce}`
 
-        const discordContent = "@everyone"
-        const emailSubject = `🛠️ Engineering Club: ${topic}`
+        const emailSubject = `${CLUB_THEME.emojis.wrench} Engineering Club: ${topic}`
         const emailContent = `Dear Engineering Club Members,\n\nWe have an important announcement about: ${topic}\n\n${details || "More details will be provided soon."}\n\nHere's what you need to know:\n- **When:** TBD\n- **Where:** Electronics room\n- **What to bring:** TBD\n\nStay tuned for more information!\n\nBest,\nEngineering Club Execs`
 
         // Store announcement with embed
@@ -287,18 +276,17 @@ export default {
           createdAt: new Date(),
         })
 
-        // Create buttons with separate send options
         const row1 = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId(`edit_discord_${announcementId}`)
             .setLabel("Edit Discord")
             .setStyle(ButtonStyle.Primary)
-            .setEmoji("💬"),
+            .setEmoji(CLUB_THEME.emojis.discord),
           new ButtonBuilder()
             .setCustomId(`edit_email_${announcementId}`)
             .setLabel("Edit Email")
             .setStyle(ButtonStyle.Primary)
-            .setEmoji("📧"),
+            .setEmoji(CLUB_THEME.emojis.email),
           new ButtonBuilder()
             .setCustomId(`test_preview_${announcementId}`)
             .setLabel("Test Preview")
@@ -311,17 +299,17 @@ export default {
             .setCustomId(`send_discord_${announcementId}`)
             .setLabel("Send Discord Only")
             .setStyle(ButtonStyle.Success)
-            .setEmoji("💬"),
+            .setEmoji(CLUB_THEME.emojis.discord),
           new ButtonBuilder()
             .setCustomId(`send_email_${announcementId}`)
             .setLabel("Send Email Only")
             .setStyle(ButtonStyle.Success)
-            .setEmoji("📧"),
+            .setEmoji(CLUB_THEME.emojis.email),
           new ButtonBuilder()
             .setCustomId(`send_both_${announcementId}`)
             .setLabel("Send Both")
             .setStyle(ButtonStyle.Success)
-            .setEmoji("🚀"),
+            .setEmoji(CLUB_THEME.emojis.rocket),
         )
 
         const row3 = new ActionRowBuilder().addComponents(
@@ -329,49 +317,41 @@ export default {
             .setCustomId(`cancel_announcement_${announcementId}`)
             .setLabel("Cancel")
             .setStyle(ButtonStyle.Danger)
-            .setEmoji("❌"),
+            .setEmoji(CLUB_THEME.emojis.error),
         )
 
-        const previewFields = [
-          {
-            name: "💬 Discord Message",
-            value: `**Content:** ${discordContent}\n**Embed Title:** ${discordEmbed.data.title}\n**Description:** ${discordEmbed.data.description}\n**Fields:** ${discordEmbed.data.fields.map((f) => `${f.name}: ${f.value}`).join(", ")}`,
-            inline: false,
-          },
-          {
-            name: "📧 Email Subject",
-            value: `\`\`\`${emailSubject}\`\`\``,
-            inline: false,
-          },
-          {
-            name: "📧 Email Content",
-            value: `\`\`\`${emailContent.substring(0, 500)}${emailContent.length > 500 ? "..." : ""}\`\`\``,
-            inline: false,
-          },
-        ]
-
-        if (attachments.length > 0) {
-          previewFields.push({
-            name: "📎 Attachments",
-            value: attachments
-              .map(
-                (att) => `• **${att.name}** (${(att.size / 1024).toFixed(1)}KB) - ${att.contentType || "Unknown type"}`,
-              )
-              .join("\n"),
-            inline: false,
-          })
-        }
+        const previewEmbed = createStatusEmbed(
+          "ANNOUNCEMENT READY",
+          "Your announcement is ready to send! Use the buttons below to edit or send.",
+          "success",
+          [
+            {
+              name: `${CLUB_THEME.emojis.discord} Discord Preview`,
+              value: `**Content:** ${discordContent}\n**Topic:** ${topic}\n**Details:** ${details || "More details coming soon!"}`,
+              inline: false,
+            },
+            {
+              name: `${CLUB_THEME.emojis.email} Email Preview`,
+              value: `**Subject:** ${emailSubject}\n**Content:** ${emailContent.substring(0, 200)}...`,
+              inline: false,
+            },
+            ...(attachments.length > 0
+              ? [
+                  {
+                    name: `${CLUB_THEME.emojis.circuit} Attachments`,
+                    value: attachments
+                      .map((att) => `${CLUB_THEME.emojis.sparkles} **${att.name}** (${(att.size / 1024).toFixed(1)}KB)`)
+                      .join("\n"),
+                    inline: false,
+                  },
+                ]
+              : []),
+          ],
+        )
 
         await interaction.reply({
-          content: "📢 **Announcement Ready!**",
-          embeds: [
-            {
-              title: "📢 Announcement Preview",
-              fields: previewFields,
-              color: 0x00ff00,
-              footer: { text: "Use the buttons below to edit or send!" },
-            },
-          ],
+          content: `${CLUB_THEME.emojis.announce} **ANNOUNCEMENT CONTROL PANEL** ${CLUB_THEME.emojis.announce}`,
+          embeds: [previewEmbed],
           components: [row1, row2, row3],
           ephemeral: true,
         })
@@ -383,27 +363,40 @@ export default {
           const emails = result.emails
           const sheetName = result.sheetName
 
-          await interaction.editReply({
-            content: null,
-            embeds: [
+          const statusEmbed = createStatusEmbed(
+            "EMAIL TEST RESULTS",
+            emails.length > 0 ? "Successfully connected to email system!" : "No emails found in spreadsheet",
+            emails.length > 0 ? "success" : "warning",
+            [
+              { name: `${CLUB_THEME.emojis.gear} Sheet Name`, value: `\`${sheetName}\``, inline: false },
               {
-                title: "📊 Email Test Results",
-                fields: [
-                  { name: "Sheet Name", value: sheetName, inline: false },
-                  { name: "Emails Found", value: emails.length.toString(), inline: true },
-                  {
-                    name: "Sample Emails",
-                    value: emails.length > 0 ? emails.slice(0, 5).join("\n") : "No emails found",
-                    inline: false,
-                  },
-                ],
-                color: emails.length > 0 ? 0x00ff00 : 0xff0000,
+                name: `${CLUB_THEME.emojis.email} Emails Found`,
+                value: `**${emails.length}** addresses`,
+                inline: true,
               },
+              ...(emails.length > 0
+                ? [
+                    {
+                      name: `${CLUB_THEME.emojis.sparkles} Sample Emails`,
+                      value: emails
+                        .slice(0, 5)
+                        .map((email) => `• ${email}`)
+                        .join("\n"),
+                      inline: false,
+                    },
+                  ]
+                : []),
             ],
+          )
+
+          await interaction.editReply({
+            embeds: [statusEmbed],
           })
         } catch (error) {
           console.error("Test emails error:", error)
-          await interaction.editReply(`❌ Error: ${error.message}`)
+          await interaction.editReply({
+            embeds: [createStatusEmbed("EMAIL TEST FAILED", error.message, "error")],
+          })
         }
       } else if (subcommand === "test-email-auth") {
         await interaction.deferReply({ ephemeral: true })
@@ -425,29 +418,22 @@ export default {
           await transporter.verify()
 
           await interaction.editReply({
-            content: null,
             embeds: [
-              {
-                title: "✅ Email Authentication Successful",
-                description: `Successfully authenticated with ${process.env.EMAIL_FROM}`,
-                color: 0x00ff00,
-              },
+              createStatusEmbed(
+                "EMAIL AUTH SUCCESS",
+                `Successfully authenticated with ${process.env.EMAIL_FROM}`,
+                "success",
+              ),
             ],
           })
         } catch (error) {
           console.error("Email auth error:", error)
           await interaction.editReply({
-            content: null,
             embeds: [
-              {
-                title: "❌ Email Authentication Failed",
-                description: `Error: ${error.message}`,
-                fields: [
-                  { name: "Email Address", value: process.env.EMAIL_FROM || "Not set", inline: true },
-                  { name: "Password", value: process.env.EMAIL_PASSWORD ? "Set (hidden)" : "Not set", inline: true },
-                ],
-                color: 0xff0000,
-              },
+              createStatusEmbed("EMAIL AUTH FAILED", error.message, "error", [
+                { name: "Email Address", value: process.env.EMAIL_FROM || "Not set", inline: true },
+                { name: "Password", value: process.env.EMAIL_PASSWORD ? "Set (hidden)" : "Not set", inline: true },
+              ]),
             ],
           })
         }
@@ -477,31 +463,33 @@ export default {
           const sheets = google.sheets({ version: "v4", auth })
           const detectedSheetName = await findCorrectSheetName(sheets, process.env.GOOGLE_SHEETS_ID)
 
-          await interaction.editReply({
-            content: null,
-            embeds: [
+          const statusEmbed = createStatusEmbed(
+            "ACADEMIC YEAR DETECTION",
+            detectedSheetName.includes(currentAcademicYear) ? "Correct year detected!" : "Using fallback sheet",
+            detectedSheetName.includes(currentAcademicYear) ? "success" : "warning",
+            [
               {
-                title: "📅 Academic Year Detection",
-                fields: [
-                  { name: "Current Academic Year", value: currentAcademicYear, inline: true },
-                  { name: "Expected Sheet Name", value: currentSheetName, inline: false },
-                  { name: "Detected Sheet Name", value: detectedSheetName, inline: false },
-                  {
-                    name: "Status",
-                    value: detectedSheetName.includes(currentAcademicYear)
-                      ? "✅ Correct year detected"
-                      : "⚠️ Using fallback sheet",
-                    inline: true,
-                  },
-                ],
-                color: detectedSheetName.includes(currentAcademicYear) ? 0x00ff00 : 0xffaa00,
-                footer: { text: "The bot automatically detects the current academic year based on the date" },
+                name: `${CLUB_THEME.emojis.calendar} Current Academic Year`,
+                value: `**${currentAcademicYear}**`,
+                inline: true,
+              },
+              { name: `${CLUB_THEME.emojis.gear} Expected Sheet`, value: `\`${currentSheetName}\``, inline: false },
+              {
+                name: `${CLUB_THEME.emojis.sparkles} Detected Sheet`,
+                value: `\`${detectedSheetName}\``,
+                inline: false,
               },
             ],
+          )
+
+          await interaction.editReply({
+            embeds: [statusEmbed],
           })
         } catch (error) {
           console.error("Check year error:", error)
-          await interaction.editReply(`❌ Error: ${error.message}`)
+          await interaction.editReply({
+            embeds: [createStatusEmbed("YEAR CHECK FAILED", error.message, "error")],
+          })
         }
       } else if (subcommand === "list-sheets") {
         await interaction.deferReply({ ephemeral: true })
@@ -531,40 +519,42 @@ export default {
           const sheetNames = spreadsheet.data.sheets.map((sheet) => sheet.properties.title)
           const currentAcademicYear = getCurrentAcademicYear()
 
-          // Highlight sheets that match the current academic year
-          const formattedSheets = sheetNames.map((name, index) => {
-            const isCurrentYear = name.includes(currentAcademicYear)
-            return `${index + 1}. ${name}${isCurrentYear ? " ⭐" : ""}`
-          })
+          const formattedSheets = sheetNames
+            .map((name, index) => {
+              const isCurrentYear = name.includes(currentAcademicYear)
+              return `${index + 1}. ${name}${isCurrentYear ? ` ${CLUB_THEME.emojis.star}` : ""}`
+            })
+            .join("\n")
+
+          const statusEmbed = createStatusEmbed(
+            "AVAILABLE SHEETS",
+            "Here are all the sheets in your Google Spreadsheet:",
+            "info",
+            [
+              { name: `${CLUB_THEME.emojis.gear} Sheet List`, value: formattedSheets, inline: false },
+              { name: `${CLUB_THEME.emojis.calendar} Current Year`, value: currentAcademicYear, inline: true },
+              { name: `${CLUB_THEME.emojis.sparkles} Total Sheets`, value: sheetNames.length.toString(), inline: true },
+            ],
+          )
 
           await interaction.editReply({
-            content: null,
-            embeds: [
-              {
-                title: "📋 Available Sheets",
-                description: formattedSheets.join("\n"),
-                fields: [
-                  { name: "Total Sheets", value: sheetNames.length.toString(), inline: true },
-                  { name: "Current Academic Year", value: currentAcademicYear, inline: true },
-                  { name: "Expected Pattern", value: getCurrentSheetName(), inline: false },
-                ],
-                color: 0x0099ff,
-                footer: { text: "⭐ indicates sheets matching the current academic year" },
-              },
-            ],
+            embeds: [statusEmbed],
           })
         } catch (error) {
           console.error("List sheets error:", error)
-          await interaction.editReply(`❌ Error: ${error.message}`)
+          await interaction.editReply({
+            embeds: [createStatusEmbed("SHEET LIST FAILED", error.message, "error")],
+          })
         }
       }
     } catch (error) {
       console.error("Command error:", error)
       try {
+        const errorEmbed = createStatusEmbed("COMMAND ERROR", error.message, "error")
         if (!interaction.replied && !interaction.deferred) {
-          await interaction.reply({ content: `❌ Error: ${error.message}`, ephemeral: true })
+          await interaction.reply({ embeds: [errorEmbed], ephemeral: true })
         } else {
-          await interaction.editReply(`❌ Error: ${error.message}`)
+          await interaction.editReply({ embeds: [errorEmbed] })
         }
       } catch (replyError) {
         console.error("Failed to send error message:", replyError)
@@ -584,7 +574,7 @@ export default {
       const announcement = pendingAnnouncements.get(announcementId)
       if (!announcement) {
         await interaction.reply({
-          content: "❌ This announcement has expired.",
+          embeds: [createStatusEmbed("ANNOUNCEMENT EXPIRED", "This announcement has expired or been deleted", "error")],
           ephemeral: true,
         })
         return
@@ -595,7 +585,7 @@ export default {
         !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)
       ) {
         await interaction.reply({
-          content: "❌ You can only edit your own announcements.",
+          embeds: [createStatusEmbed("ACCESS DENIED", "You can only edit your own announcements", "error")],
           ephemeral: true,
         })
         return
@@ -604,8 +594,8 @@ export default {
       switch (action) {
         case "test": {
           if (type === "preview") {
-            const embedMessage = await interaction.reply({
-              content: `${announcement.discordContent} 🧪 **Test Preview** - This is how your announcement will look:`,
+            await interaction.reply({
+              content: `${announcement.discordContent} ${CLUB_THEME.emojis.sparkles} **TEST PREVIEW** - This is how your announcement will look:`,
               embeds: [announcement.discordEmbed],
               ephemeral: false,
             })
@@ -615,6 +605,7 @@ export default {
               for (const attachment of announcement.attachments) {
                 try {
                   await interaction.followUp({
+                    content: `${CLUB_THEME.emojis.circuit} **Attachment:** ${attachment.name}`,
                     files: [
                       {
                         attachment: attachment.url,
@@ -677,7 +668,13 @@ export default {
 
         case "send": {
           await interaction.reply({
-            content: `🚀 Sending ${type === "both" ? "both announcements" : type === "discord" ? "Discord announcement" : "email announcement"}...`,
+            embeds: [
+              createStatusEmbed(
+                "SENDING ANNOUNCEMENT",
+                `Sending ${type === "both" ? "both announcements" : type === "discord" ? "Discord announcement" : "email announcement"}...`,
+                "loading",
+              ),
+            ],
             ephemeral: true,
           })
 
@@ -698,19 +695,30 @@ export default {
 
               console.log(`Found announcement channel: ${announcementChannel.name}`)
 
-              const messageOptions = {
+              await announcementChannel.send({
                 content: announcement.discordContent,
                 embeds: [announcement.discordEmbed],
-              }
+              })
 
+              // Send attachments as separate messages
               if (announcement.attachments && announcement.attachments.length > 0) {
-                messageOptions.files = announcement.attachments.map((att) => ({
-                  attachment: att.url,
-                  name: att.name,
-                }))
+                for (const attachment of announcement.attachments) {
+                  try {
+                    await announcementChannel.send({
+                      content: `${CLUB_THEME.emojis.circuit} **Attachment:** ${attachment.name}`,
+                      files: [
+                        {
+                          attachment: attachment.url,
+                          name: attachment.name,
+                        },
+                      ],
+                    })
+                  } catch (error) {
+                    console.error(`Failed to send attachment ${attachment.name}:`, error)
+                  }
+                }
               }
 
-              await announcementChannel.send(messageOptions)
               discordSuccess = true
               console.log("Discord announcement sent successfully")
             } catch (error) {
@@ -745,25 +753,44 @@ export default {
             }
           }
 
-          // Build result message
+          // Build result message with styled embed
+          let resultType = "success"
           let resultMessage = ""
+
           if (type === "discord") {
-            resultMessage = discordSuccess ? "✅ Discord announcement sent!" : `❌ Discord failed: ${discordError}`
+            resultMessage = discordSuccess
+              ? "Discord announcement sent successfully!"
+              : `Discord failed: ${discordError}`
+            resultType = discordSuccess ? "success" : "error"
           } else if (type === "email") {
-            resultMessage = emailSuccess ? "✅ Email announcement sent!" : `❌ Email failed: ${emailError}`
+            resultMessage = emailSuccess ? "Email announcement sent successfully!" : `Email failed: ${emailError}`
+            resultType = emailSuccess ? "success" : "error"
           } else {
             // both
-            const results = []
-            if (discordSuccess) results.push("✅ Discord sent")
-            else results.push(`❌ Discord failed: ${discordError}`)
+            const successes = []
+            const failures = []
 
-            if (emailSuccess) results.push("✅ Email sent")
-            else results.push(`❌ Email failed: ${emailError}`)
+            if (discordSuccess) successes.push("Discord")
+            else failures.push(`Discord: ${discordError}`)
 
-            resultMessage = results.join("\n")
+            if (emailSuccess) successes.push("Email")
+            else failures.push(`Email: ${emailError}`)
+
+            if (successes.length > 0 && failures.length === 0) {
+              resultMessage = `All announcements sent successfully! (${successes.join(", ")})`
+              resultType = "success"
+            } else if (successes.length > 0) {
+              resultMessage = `Partial success: ${successes.join(", ")} sent. Failures: ${failures.join(", ")}`
+              resultType = "warning"
+            } else {
+              resultMessage = `All failed: ${failures.join(", ")}`
+              resultType = "error"
+            }
           }
 
-          await interaction.editReply(resultMessage)
+          await interaction.editReply({
+            embeds: [createStatusEmbed("SEND RESULTS", resultMessage, resultType)],
+          })
 
           // If everything was successful, clean up
           if (
@@ -775,14 +802,7 @@ export default {
 
             try {
               await interaction.message.edit({
-                embeds: [
-                  {
-                    title: "✅ Announcement Sent",
-                    description: "Successfully sent announcement(s).",
-                    color: 0x00ff00,
-                    timestamp: new Date(),
-                  },
-                ],
+                embeds: [createStatusEmbed("ANNOUNCEMENT SENT", "Successfully sent announcement(s)", "success")],
                 components: [],
               })
             } catch (editError) {
@@ -795,14 +815,7 @@ export default {
         case "cancel": {
           pendingAnnouncements.delete(announcementId)
           await interaction.update({
-            embeds: [
-              {
-                title: "❌ Cancelled",
-                description: "Announcement cancelled.",
-                color: 0xff0000,
-                timestamp: new Date(),
-              },
-            ],
+            embeds: [createStatusEmbed("ANNOUNCEMENT CANCELLED", "Announcement has been cancelled", "error")],
             components: [],
           })
           break
@@ -811,13 +824,11 @@ export default {
     } catch (error) {
       console.error("Button interaction error:", error)
       try {
+        const errorEmbed = createStatusEmbed("INTERACTION ERROR", error.message, "error")
         if (!interaction.replied && !interaction.deferred) {
-          await interaction.reply({
-            content: `❌ Error: ${error.message}`,
-            ephemeral: true,
-          })
+          await interaction.reply({ embeds: [errorEmbed], ephemeral: true })
         } else {
-          await interaction.editReply(`❌ Error: ${error.message}`)
+          await interaction.editReply({ embeds: [errorEmbed] })
         }
       } catch (replyError) {
         console.error("Failed to send error message:", replyError)
