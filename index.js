@@ -5,8 +5,6 @@ import { dirname } from "path"
 import express from "express"
 import dotenv from "dotenv"
 import fetch from "node-fetch"
-import { handleAnnouncementButtons } from "./handlers/button-handler.js"
-import { handleAnnouncementInteraction } from "./handlers/announcement-handler.js"
 
 dotenv.config({ path: ".env" })
 dotenv.config({ path: "local.env" })
@@ -49,7 +47,7 @@ setInterval(
       const data = await response.json()
       console.log(`[v0] Keep-alive ping successful:`, data.timestamp)
     } catch (error) {
-      console.error(`[v0] Keep-alive ping failed:`, error.message)
+      console.error(`Keep-alive ping failed:`, error.message)
     }
   },
   14 * 60 * 1000,
@@ -124,23 +122,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
     }
   } else if (interaction.isButton()) {
-    if (
-      interaction.customId.startsWith("announce_") ||
-      interaction.customId.startsWith("send_announcement") ||
-      interaction.customId.startsWith("edit_announcement")
-    ) {
-      try {
-        await handleAnnouncementInteraction(interaction)
-        return
-      } catch (error) {
-        console.error("Enhanced announcement button error:", error)
-      }
-    }
-
-    const handled = await handleAnnouncementButtons(interaction)
-    if (handled) return
-
-    // Handle button interactions for announce command (legacy)
+    // Handle button interactions for announce command
     const announceCommand = client.commands.get("announce")
     if (announceCommand && announceCommand.handleButtonInteraction) {
       try {
@@ -150,15 +132,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
     }
   } else if (interaction.isModalSubmit()) {
-    if (interaction.customId.startsWith("modal_announce_")) {
-      try {
-        await handleAnnouncementInteraction(interaction)
-        return
-      } catch (error) {
-        console.error("Enhanced announcement modal error:", error)
-      }
-    }
-
     // Handle modal submissions for announce command
     const announceCommand = client.commands.get("announce")
     if (announceCommand && announceCommand.handleModalSubmit) {
@@ -216,10 +189,10 @@ client.on(Events.MessageCreate, async (message) => {
 // Error Handling
 client.on(Events.Error, console.error)
 
-console.log("[v0] Attempting to login to Discord...")
-console.log("[v0] Token length:", process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.length : "undefined")
+console.log("Attempting to login to Discord...")
+console.log("Token length:", process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.length : "undefined")
 console.log(
-  "[v0] Token starts with:",
+  "Token starts with:",
   process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.substring(0, 10) + "..." : "undefined",
 )
 
