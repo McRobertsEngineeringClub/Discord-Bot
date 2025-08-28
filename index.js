@@ -12,7 +12,7 @@ dotenv.config({ path: "local.env" })
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-console.log("[v0] Checking environment variables...")
+console.log("Checking environment variables...")
 if (!process.env.DISCORD_TOKEN) {
   console.error("❌ DISCORD_TOKEN is missing! Please add it to your environment variables.")
   process.exit(1)
@@ -45,7 +45,7 @@ setInterval(
     try {
       const response = await fetch(`${RENDER_URL}/keep-alive`)
       const data = await response.json()
-      console.log(`[v0] Keep-alive ping successful:`, data.timestamp)
+      console.log(`Keep-alive ping successful:`, data.timestamp)
     } catch (error) {
       console.error(`Keep-alive ping failed:`, error.message)
     }
@@ -83,11 +83,6 @@ client.once(Events.ClientReady, async () => {
   console.log(`🤖 Bot logged in as ${client.user.tag}`)
 
   try {
-    // Try to register commands globally first (takes up to 1 hour to update)
-    await client.application.commands.set(client.commands.map((command) => command.data))
-    console.log("✅ Global slash commands registered")
-
-    // Also register to specific guild for instant updates (if guild ID is provided)
     const guildId = process.env.GUILD_ID || "768632778396139550"
     const guild = client.guilds.cache.get(guildId)
     if (guild) {
@@ -95,6 +90,9 @@ client.once(Events.ClientReady, async () => {
       console.log(`✅ Guild slash commands registered in ${guild.name}`)
     } else {
       console.warn(`⚠️ Could not find guild with ID: ${guildId}`)
+      // Fallback to global registration if guild not found
+      await client.application.commands.set(client.commands.map((command) => command.data))
+      console.log("✅ Global slash commands registered (fallback)")
     }
   } catch (error) {
     console.error("❌ Error registering commands:", error)

@@ -44,7 +44,7 @@ export default {
       // Use default club GIF if no URL provided or "default" specified
       if (!avatarUrl || avatarUrl.toLowerCase() === "default") {
         avatarUrl =
-          "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExaXdtc2prYWpsbWFhMjN5dTJybWIyb2o2cjkxbDJpMGY1dWRmY2R6eCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/Cu9vP4uAFqRyzQvtoj/giphy.gif"
+          "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExaGZnZGoydDhqcm9yZGtqanQ5YmNvdDNybzY4bGR3aDJqeWg3MnRkeiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/s3wqGbNrYjG3AqkmD5/giphy.gif"
       }
 
       try {
