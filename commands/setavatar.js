@@ -14,7 +14,7 @@ export default {
 
   async execute(interaction) {
     try {
-      // Check permissions
+      // Check permissions first before any interaction responses
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
         await interaction.reply({
           embeds: [
@@ -41,14 +41,18 @@ export default {
         avatarUrl = attachment.url
       }
 
-      // Use default club GIF if no URL provided or "default" specified
       if (!avatarUrl || avatarUrl.toLowerCase() === "default") {
         avatarUrl =
           "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExaGZnZGoydDhqcm9yZGtqanQ5YmNvdDNybzY4bGR3aDJqeWg3MnRkeiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/s3wqGbNrYjG3AqkmD5/giphy.gif"
       }
 
       try {
-        await interaction.client.user.setAvatar(avatarUrl)
+        const avatarPromise = interaction.client.user.setAvatar(avatarUrl)
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Avatar update timed out")), 10000),
+        )
+
+        await Promise.race([avatarPromise, timeoutPromise])
 
         await interaction.editReply({
           embeds: [
@@ -71,6 +75,8 @@ export default {
           errorMessage = "Bot doesn't have permission to change avatar"
         } else if (error.message.includes("rate limit")) {
           errorMessage = "Rate limited. You can only change the bot avatar twice per hour"
+        } else if (error.message.includes("timeout")) {
+          errorMessage = "Avatar update timed out. Please try again"
         }
 
         await interaction.editReply({
@@ -79,11 +85,13 @@ export default {
       }
     } catch (error) {
       console.error("SetAvatar command error:", error)
+
       try {
-        const errorEmbed = createStatusEmbed("Command Error", error.message, "error")
+        const errorEmbed = createStatusEmbed("Command Error", "An unexpected error occurred", "error")
+
         if (!interaction.replied && !interaction.deferred) {
           await interaction.reply({ embeds: [errorEmbed], ephemeral: true })
-        } else {
+        } else if (interaction.deferred) {
           await interaction.editReply({ embeds: [errorEmbed] })
         }
       } catch (replyError) {
