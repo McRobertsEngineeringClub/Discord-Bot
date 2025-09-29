@@ -5,10 +5,10 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node commandSetup.js && node index.js",
-    "register": "node commandSetup.js",
-    "cleanup": "node commandSetup.js --cleanup-only",
-    "emergency": "node commandSetup.js --emergency-cleanup",
+    "start": "node cleanup-and-register.js && node index.js",
+    "register": "node cleanup-and-register.js",
+    "cleanup": "node cleanup-and-register.js --cleanup-only",
+    "emergency": "node cleanup-and-register.js --emergency-cleanup",
     "dev": "nodemon index.js"
   },
   "dependencies": {

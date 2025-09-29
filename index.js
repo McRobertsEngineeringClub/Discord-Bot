@@ -1,9 +1,9 @@
-import { Client, GatewayIntentBits, Events, Collection } from "discord.js";
+import { Client, GatewayIntentBits, Events } from "discord.js";
 import express from "express";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
 import setupCommands from './commandHandler.js'; // Import the interaction handler
-import { CommandManager, cleanSpecificGuilds, emergencyCleanup } from './commandSetup.js'; // Import command setup utilities
+// Removed imports for CommandManager, cleanSpecificGuilds, emergencyCleanup as they are used by cleanup-and-register.js
 import { closeEmailConnection } from './emailUtils.js';
 // Load environment variables
 dotenv.config({ path: ".env" });
