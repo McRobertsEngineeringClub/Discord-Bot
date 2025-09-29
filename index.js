@@ -1,16 +1,11 @@
-import { Client, GatewayIntentBits, Collection, Events } from "discord.js"
-import fs from "fs"
-import { fileURLToPath } from "url"
-import { dirname } from "path"
+import { Client, GatewayIntentBits, Events } from "discord.js"
 import express from "express"
 import dotenv from "dotenv"
 import fetch from "node-fetch"
+import setupCommands from './commandHandler.js'; // Import the command handler
 
 dotenv.config({ path: ".env" })
 dotenv.config({ path: "local.env" })
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
 
 console.log("Checking environment variables...")
 if (!process.env.DISCORD_TOKEN) {
@@ -55,92 +50,16 @@ setInterval(
 
 // Configuration
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
 })
-client.commands = new Collection()
-const token = process.env.DISCORD_TOKEN
 const INTRODUCTION_CHANNEL_ID = process.env.INTRODUCTION_CHANNEL_ID
 
-console.log("[v0] Loading commands...")
-const commandFiles = fs.readdirSync("./commands").filter((file) => file.endsWith(".js"))
-for (const file of commandFiles) {
-  try {
-    const command = await import(`./commands/${file}`)
-    if (command.default && command.default.data && command.default.data.name) {
-      client.commands.set(command.default.data.name, command.default)
-      console.log(`✅ Loaded command: ${command.default.data.name}`)
-    } else {
-      console.warn(`⚠️ Command file ${file} doesn't export properly structured command`)
-    }
-  } catch (error) {
-    console.error(`❌ Error loading command ${file}:`, error)
-  }
-}
-console.log(`📦 Loaded ${client.commands.size} commands total`)
-
-// Register Commands
-client.once(Events.ClientReady, async () => {
-  console.log(`🤖 Bot logged in as ${client.user.tag}`)
-
-  try {
-    const guildId = process.env.GUILD_ID || "768632778396139550"
-    const guild = client.guilds.cache.get(guildId)
-    if (guild) {
-      await guild.commands.set(client.commands.map((command) => command.data))
-      console.log(`✅ Guild slash commands registered in ${guild.name}`)
-    } else {
-      console.warn(`⚠️ Could not find guild with ID: ${guildId}`)
-      // Fallback to global registration if guild not found
-      await client.application.commands.set(client.commands.map((command) => command.data))
-      console.log("✅ Global slash commands registered (fallback)")
-    }
-  } catch (error) {
-    console.error("❌ Error registering commands:", error)
-  }
-})
-
-// Interaction Event
-client.on(Events.InteractionCreate, async (interaction) => {
-  if (interaction.isCommand()) {
-    const command = client.commands.get(interaction.commandName)
-    if (!command) return
-
-    try {
-      await command.execute(interaction)
-    } catch (error) {
-      console.error(error)
-      const replyOptions = {
-        content: "There was an error executing this command!",
-        flags: 64, // This sets the message as ephemeral
-      }
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp(replyOptions)
-      } else {
-        await interaction.reply(replyOptions)
-      }
-    }
-  } else if (interaction.isButton()) {
-    // Handle button interactions for announce command
-    const announceCommand = client.commands.get("announce")
-    if (announceCommand && announceCommand.handleButtonInteraction) {
-      try {
-        await announceCommand.handleButtonInteraction(interaction)
-      } catch (error) {
-        console.error("Button interaction error:", error)
-      }
-    }
-  } else if (interaction.isModalSubmit()) {
-    // Handle modal submissions for announce command
-    const announceCommand = client.commands.get("announce")
-    if (announceCommand && announceCommand.handleModalSubmit) {
-      try {
-        await announceCommand.handleModalSubmit(interaction)
-      } catch (error) {
-        console.error("Modal submit error:", error)
-      }
-    }
-  }
-})
+// Setup command handling
+setupCommands(client);
 
 // Message Event (for encouragement system)
 client.on(Events.MessageCreate, async (message) => {
