@@ -1,199 +1,175 @@
-import { google } from "googleapis";
-import nodemailer from "nodemailer";
+import { google } from 'googleapis';
+import nodemailer from 'nodemailer';
+import path from 'path';
+import dotenv from 'dotenv';
 
-// Cache for Google Sheets auth to avoid repeated authentication
-let cachedAuth = null;
+// Load environment variables based on NODE_ENV
+const envPath = process.env.NODE_ENV === 'development' ? '.local.env' : '.env';
+dotenv.config({ path: envPath });
 
-// Get authenticated Google Sheets client
-async function getGoogleAuth() {
-  if (cachedAuth) return cachedAuth;
+console.log(`DEBUG: emailUtils.js loading environment variables from: ${envPath}`);
+console.log("DEBUG: EMAIL_FROM is", process.env.EMAIL_FROM ? "set" : "not set");
+console.log("DEBUG: GOOGLE_SHEETS_ID is", process.env.GOOGLE_SHEETS_ID ? "set" : "not set");
 
-  const requiredEnvVars = [
-    'GOOGLE_SHEETS_ID',
-    'GOOGLE_CLIENT_EMAIL',
-    'GOOGLE_PRIVATE_KEY',
-    'GOOGLE_PROJECT_ID'
-  ];
-  const missingVars = requiredEnvVars.filter(v => !process.env[v]);
-  if (missingVars.length > 0) {
-    throw new Error(`Missing Google Sheets environment variables: ${missingVars.join(', ')}`);
-  }
-
-  cachedAuth = new google.auth.GoogleAuth({
-    credentials: {
-      type: "service_account",
-      project_id: process.env.GOOGLE_PROJECT_ID,
-      private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
-      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-      client_email: process.env.GOOGLE_CLIENT_EMAIL,
-      client_id: process.env.GOOGLE_CLIENT_ID,
-      auth_uri: "https://accounts.google.com/o/oauth2/auth",
-      token_uri: "https://oauth2.googleapis.com/token",
-      auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
-      client_x509_cert_url: process.env.GOOGLE_CLIENT_CERT_URL,
-    },
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
-  });
-  return cachedAuth;
-}
-
-// Read club emails from Google Sheets with timeout
-export async function getClubEmails(timeout = 10000) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-  try {
-    const auth = await getGoogleAuth();
-    const sheets = google.sheets({ version: "v4", auth });
-    
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEETS_ID,
-      range: `'Sheet1'!B:B`, // Fixed sheet name as requested
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-
-    const emails = response.data.values
-      ?.flat()
-      .filter((email) => email && email.includes("@"))
-      .filter((email, index, arr) => arr.indexOf(email) === index);
-    console.log(`📧 Found ${emails?.length || 0} unique emails`);
-    return emails || [];
-  } catch (error) {
-    clearTimeout(timeoutId);
-    
-    if (error.name === 'AbortError') {
-      throw new Error('Google Sheets request timeout');
-    }
-    
-    console.error("❌ Error fetching emails:", error.message);
-    throw error;
-  }
-}
-
-// Create reusable transporter with connection pooling
+// Create reusable transporter
 let transporter = null;
+
 function getTransporter() {
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.EMAIL_FROM,
-        pass: process.env.EMAIL_PASSWORD
-      },
-      pool: true, // Enable connection pooling
-      maxConnections: 5,
-      maxMessages: 10,
-      socketTimeout: 30000, // 30 second timeout
-      greetingTimeout: 30000,
-      connectionTimeout: 30000
-    });
-  }
-  return transporter;
+    if (!transporter) {
+        if (!process.env.EMAIL_FROM || !process.env.EMAIL_PASSWORD) {
+            console.error('ERROR: EMAIL_FROM or EMAIL_PASSWORD is not set for Nodemailer.');
+            // Fallback for development if not critical, or throw error to stop.
+            if (process.env.NODE_ENV !== 'production') {
+                console.warn('⚠️ Nodemailer will not send emails without EMAIL_FROM/EMAIL_PASSWORD. Continuing in dev mode.');
+                return null; // Return null transporter in dev if credentials missing
+            } else {
+                throw new Error('Missing EMAIL_FROM or EMAIL_PASSWORD in production.');
+            }
+        }
+
+        transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_FROM,
+                pass: process.env.EMAIL_PASSWORD
+            },
+            pool: true,
+            maxConnections: 5,
+            maxMessages: 100
+        });
+    }
+    return transporter;
 }
 
-// Enhanced email sending with better error handling
-export async function sendEmails(subject, content, toEmails, options = {}) {
-  const {
-    retries = 3,
-    retryDelay = 2000,
-    batchSize = 50, // Send in batches to avoid rate limits
-    delayBetweenBatches = 1000
-  } = options;
+// Google Sheets authentication
+async function authenticateGoogle() {
+    // Validate required Google Sheets environment variables
+    const requiredGoogleEnvVars = [
+        'GOOGLE_PROJECT_ID', 'GOOGLE_PRIVATE_KEY_ID',
+        'GOOGLE_PRIVATE_KEY', 'GOOGLE_CLIENT_EMAIL', 'GOOGLE_CLIENT_ID',
+        'GOOGLE_CLIENT_CERT_URL'
+    ];
 
-  if (!toEmails || toEmails.length === 0) {
-    throw new Error("No email recipients provided");
-  }
+    const missingGoogleVars = requiredGoogleEnvVars.filter(v => !process.env[v]);
+    if (missingGoogleVars.length > 0) {
+        console.error(`ERROR: Missing Google Sheets API environment variables: ${missingGoogleVars.join(', ')}`);
+        throw new Error('Missing Google Sheets API environment variables.');
+    }
 
-  const transporter = getTransporter();
-  
-  // Split emails into batches
-  const batches = [];
-  for (let i = 0; i < toEmails.length; i += batchSize) {
-    batches.push(toEmails.slice(i, i + batchSize));
-  }
+    const auth = new google.auth.GoogleAuth({
+        credentials: {
+            type: "service_account", // Assuming type is always service_account based on provided keys
+            project_id: process.env.GOOGLE_PROJECT_ID,
+            private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
+            // Replace escaped newlines with actual newlines
+            private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+            client_email: process.env.GOOGLE_CLIENT_EMAIL,
+            client_id: process.env.GOOGLE_CLIENT_ID,
+            // Use the original client cert URL
+            client_x509_cert_url: process.env.GOOGLE_CLIENT_CERT_URL,
+        },
+        scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly']
+    });
 
-  console.log(`📬 Sending emails to ${toEmails.length} recipients in ${batches.length} batch(es)`);
+    return await auth.getClient();
+}
 
-  const results = {
-    successful: 0,
-    failed: [],
-    errors: []
-  };
+// Get email list from Google Sheets
+async function getEmailList() {
+    try {
+        if (!process.env.GOOGLE_SHEETS_ID) {
+            console.error('ERROR: GOOGLE_SHEETS_ID is not set. Cannot fetch email list.');
+            return [];
+        }
 
-  // Process each batch
-  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-    const batch = batches[batchIndex];
-    let attempt = 0;
-    let success = false;
+        const auth = await authenticateGoogle();
+        const sheets = google.sheets({ version: 'v4', auth });
 
-    while (attempt < retries && !success) {
-      try {
-        attempt++;
-        
-        // Verify transporter connection
-        await transporter.verify();
-        
-        // Send email
-        const info = await transporter.sendMail({
-          from: `"Engineering Club" <${process.env.EMAIL_FROM}>`,
-          bcc: batch.join(","),
-          subject: subject,
-          text: content,
-          html: formatEmailContent(content)
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+            range: 'B:B', // Read from Column B
         });
 
-        results.successful += batch.length;
-        success = true;
-        
-        console.log(`✅ Batch ${batchIndex + 1}/${batches.length} sent successfully`);
-        
-        // Delay between batches to avoid rate limits
-        if (batchIndex < batches.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+        const rows = response.data.values;
+        if (!rows || rows.length === 0) {
+            console.log('No data found in column B.');
+            return [];
         }
-      } catch (error) {
-        console.error(`❌ Attempt ${attempt}/${retries} failed for batch ${batchIndex + 1}:`, error.message);
-        
-        if (attempt < retries) {
-          console.log(`⏳ Retrying in ${retryDelay}ms...`);
-          await new Promise(resolve => setTimeout(resolve, retryDelay * attempt));
-        } else {
-          results.failed.push(...batch);
-          results.errors.push({
-            batch: batchIndex + 1,
-            error: error.message
-          });
+
+        // Filter out header and empty cells, validate emails
+        const emails = rows
+            .slice(1) // Skip header row
+            .flat()
+            .filter(email => email && typeof email === 'string' && email.includes('@'))
+            .map(email => email.trim().toLowerCase());
+
+        console.log(`Found ${emails.length} valid email addresses from Google Sheets`);
+        return emails;
+    } catch (error) {
+        console.error('❌ Error fetching emails from Google Sheets:', error);
+        // Fallback: return empty array or test emails
+        if (process.env.NODE_ENV === 'development') {
+            console.log('Using test email for development due to Google Sheets error.');
+            return ['test@example.com']; // Test email for development
         }
-      }
+        return [];
     }
-  }
-
-  // Log final results
-  if (results.successful > 0) {
-    console.log(`✅ Successfully sent emails to ${results.successful} recipients`);
-  }
-  
-  if (results.failed.length > 0) {
-    console.error(`❌ Failed to send to ${results.failed.length} recipients`);
-  }
-
-  return results;
 }
 
-// Format content for HTML email
-function formatEmailContent(content) {
-  return content
-    .replace(/\n/g, "<br>")
-    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.*?)\*/g, "<em>$1</em>")
-    .replace(/`(.*?)`/g, "<code>$1</code>");
+// Send emails with BCC
+async function sendEmails(subject, htmlContent, emailList) {
+    const transporter = getTransporter();
+
+    if (!transporter) {
+        console.error('❌ Email transporter not initialized due to missing credentials or other error.');
+        throw new Error('Email transporter not ready.');
+    }
+
+    if (!emailList || emailList.length === 0) {
+        console.log('No email addresses provided to send to.');
+        return { successful: [], failed: [] };
+    }
+
+    try {
+        const mailOptions = {
+            from: `"Engineering Club Announcements" <${process.env.EMAIL_FROM}>`,
+            to: process.env.EMAIL_FROM, // Send to yourself to avoid issues with empty 'to' and all BCC
+            bcc: emailList.join(', '), // All recipients in BCC
+            subject: subject,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2 style="color: #333;">${subject}</h2>
+                    <div style="padding: 20px; background-color: #f5f5f5; border-radius: 5px;">
+                        ${htmlContent.replace(/\n/g, '<br>')}
+                    </div>
+                    <footer style="margin-top: 20px; font-size: 12px; color: #666;">
+                        <p>This is an automated message. Please do not reply to this email.</p>
+                    </footer>
+                </div>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`✅ Email sent to ${emailList.length} recipients via BCC. Message ID: ${info.messageId}`);
+
+        return {
+            successful: emailList,
+            failed: []
+        };
+    } catch (error) {
+        console.error('❌ Error sending emails:', error);
+        throw error;
+    }
 }
 
 // Cleanup function to close transporter
-export function closeEmailConnection() {
-  if (transporter) {
-    transporter.close();
-    transporter = null;
-  }
+function closeEmailConnection() {
+    if (transporter) {
+        transporter.close();
+        transporter = null;
+        console.log('📧 Email transporter closed.');
+    }
 }
+
+// Export all functions using ES Module syntax
+export { getEmailList, sendEmails, closeEmailConnection };

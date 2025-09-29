@@ -1,41 +1,41 @@
 import { Collection, Events } from 'discord.js';
-import fs from 'fs';
-import path from 'path';
+import { readdirSync, existsSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'url';
-// Import announceModule directly (if not dynamically imported)
-// import announceModule from './announceModule.js';
+import { dirname } from 'path';
 
+// Helper for __dirname in ES Modules
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = dirname(__filename);
 
 export async function loadBotCommands(client) {
-    client.commands = new Collection();
+    client.commands = new Collection(); // Ensure commands collection is fresh
 
-    const commandsPath = path.join(__dirname, 'commands');
-    const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js') && file !== 'announce.js');
+    const commandsPath = join(__dirname, 'commands');
 
-    // Dynamically load announceModule (now using user.id for pending announcements)
-    const announceModule = await import('./announceModule.js');
-    if (announceModule.default?.data?.name) {
-        client.commands.set(announceModule.default.data.name, announceModule.default);
-        console.log(`✅ Loaded internal command: ${announceModule.default.data.name}`);
+    if (!existsSync(commandsPath)) {
+        mkdirSync(commandsPath);
     }
 
-    for (const file of commandFiles) {
-        const filePath = path.join(commandsPath, file);
-        try {
-            const commandModule = await import(filePath);
-            const command = commandModule.default; // Assuming default export
+    const commandFiles = readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
-            if (command && command.data && command.data.name) {
+    for (const file of commandFiles) {
+        const filePath = join(commandsPath, file);
+        try {
+            // Convert Windows path to file:// URL for dynamic import
+            const fileUrl = new URL(`file:///${filePath}`).href;
+            const commandModule = await import(fileUrl);
+            const command = commandModule.default || commandModule; // Handle both default and non-default exports
+
+            if ('data' in command && 'execute' in command) {
                 if (client.commands.has(command.data.name)) {
                     console.warn(`⚠️ Skipping duplicate command in client.commands: ${command.data.name} from ${file}`);
                     continue;
                 }
                 client.commands.set(command.data.name, command);
-                console.log(`✅ Loaded external command: ${command.data.name} from ${file}`);
+                console.log(`✅ Loaded command: ${command.data.name} from ${file}`);
             } else {
-                console.warn(`⚠️ Command file ${file} doesn't export properly structured command`);
+                console.warn(`⚠️ Warning: Command file ${file} is missing required "data" or "execute" properties.`);
             }
         } catch (error) {
             console.error(`❌ Error loading command ${file}:`, error);
@@ -45,156 +45,55 @@ export async function loadBotCommands(client) {
 }
 
 export function setupInteractionHandlers(client) {
-    client.on('interactionCreate', async interaction => {
-        // Handle slash commands
-        if (interaction.isChatInputCommand()) { // Using isChatInputCommand for slash commands
-            const command = client.commands.get(interaction.commandName);
-            
-            if (!command) {
-                console.log(`Unknown command: ${interaction.commandName}`);
-                if (!interaction.replied && !interaction.deferred) {
-                    await interaction.reply({ 
-                        content: 'Unknown command!', 
-                        flags: 64 // Using flags
-                    });
-                }
-                return;
-            }
-            try {
-                await command.execute(interaction);
-            } catch (error) {
-                console.error(`❌ Error executing ${interaction.commandName}:`, error);
-                
-                // Smart error response handling
-                try {
-                    const errorMessage = {
-                        content: '❌ There was an error executing this command!',
-                        flags: 64 // Using flags
-                    };
-                    if (interaction.deferred) {
-                        await interaction.editReply(errorMessage);
-                    } else if (interaction.replied) {
-                        await interaction.followUp(errorMessage);
-                    } else {
-                        await interaction.reply(errorMessage);
-                    }
-                } catch (replyError) {
-                    console.error('❌ Could not send error message:', replyError);
-                }
-            }
-        }
-        // Handle button interactions
-        else if (interaction.isButton()) {
-            try {
-                // Defer the button update immediately
-                await interaction.deferUpdate();
-                
-                // Dynamically import announceModule to get pending announcements
-                const announceModule = await import('./announceModule.js');
-                const pendingAnnouncements = announceModule.default.pendingAnnouncements;
-                
-                const announcementData = pendingAnnouncements.get(interaction.user.id);
-                if (!announcementData) {
-                    await interaction.followUp({
-                        content: '❌ No pending announcement found. Please create a new one.',
-                        flags: 64 // Using flags
-                    });
-                    return;
-                }
-                // Handle different button actions
-                switch (interaction.customId) {
-                    case 'edit_discord':
-                        await announceModule.default.showEditModal(interaction, 'discord', announcementData);
-                        break;
-                    
-                    case 'edit_email':
-                        await announceModule.default.showEditModal(interaction, 'email', announcementData);
-                        break;
-                    
-                    case 'test_send':
-                        await announceModule.default.sendPreview(interaction, announcementData);
-                        break;
-                    
-                    case 'send_announcement':
-                        await announceModule.default.sendAnnouncement(interaction, announcementData);
-                        pendingAnnouncements.delete(interaction.user.id);
-                        break;
-                    
-                    case 'cancel_announcement':
-                        pendingAnnouncements.delete(interaction.user.id);
-                        await interaction.editReply({
-                            content: '✅ Announcement cancelled.',
-                            embeds: [],
-                            components: []
-                        });
-                        break;
-                }
-            } catch (error) {
-                console.error('❌ Button interaction error:', error);
-                
-                try {
-                    if (interaction.deferred) {
-                        await interaction.followUp({
-                            content: '❌ An error occurred processing your request.',
-                            flags: 64 // Using flags
-                        });
-                    } else if (!interaction.replied) {
-                        await interaction.reply({
-                            content: '❌ An error occurred processing your request.',
-                            flags: 64
-                        });
-                    }
-                } catch (followUpError) {
-                    console.error('Could not send follow-up:', followUpError);
-                }
-            }
-        }
-        // Handle modal submissions
-        else if (interaction.isModalSubmit()) {
-            try {
-                // Defer the modal response immediately
-                await interaction.deferUpdate();
+    client.on(Events.InteractionCreate, async interaction => {
+        try {
+            // Handle slash commands
+            if (interaction.isChatInputCommand()) {
+                const command = client.commands.get(interaction.commandName);
 
-                const announceModule = await import('./announceModule.js');
-                const pendingAnnouncements = announceModule.default.pendingAnnouncements;
-                
-                const announcementData = pendingAnnouncements.get(interaction.user.id);
-                
-                if (!announcementData) {
-                    await interaction.followUp({
-                        content: '❌ No pending announcement found.',
-                        flags: 64 // Using flags
-                    });
-                    return;
-                }
-                // Update the announcement data based on modal type
-                if (interaction.customId === 'edit_discord_modal') {
-                    announcementData.discordContent = interaction.fields.getTextInputValue('discord_content');
-                } else if (interaction.customId === 'edit_email_modal') {
-                    announcementData.emailSubject = interaction.fields.getTextInputValue('email_subject');
-                    announcementData.emailContent = interaction.fields.getTextInputValue('email_content');
-                }
-                // Update the control panel
-                await announceModule.default.updateControlPanel(interaction, announcementData); // Call updateControlPanel via announceModule.default
-                
-            } catch (error) {
-                console.error('❌ Modal submission error:', error);
-                
-                try {
-                    if (interaction.deferred) {
-                        await interaction.followUp({
-                            content: '❌ An error occurred processing your submission.',
-                            flags: 64 // Using flags
-                        });
-                    } else if (!interaction.replied) {
+                if (!command) {
+                    console.log(`Unknown command: ${interaction.commandName}`);
+                    if (!interaction.replied && !interaction.deferred) {
                         await interaction.reply({
-                            content: '❌ An error occurred processing your submission.',
-                            flags: 64
+                            content: 'Unknown command!',
+                            ephemeral: true
                         });
                     }
-                } catch (followUpError) {
-                    console.error('Could not send follow-up:', followUpError);
+                    return;
                 }
+                await command.execute(interaction, client); // Pass client for potential use in commands
+            }
+            // Handle button interactions
+            else if (interaction.isButton()) {
+                const command = client.commands.get('announce'); // Assuming 'announce' command handles buttons
+                if (command && command.handleButton) {
+                    await command.handleButton(interaction, client);
+                } else {
+                    console.warn(`⚠️ No handler found for button interaction: ${interaction.customId}`);
+                    if (!interaction.replied && !interaction.deferred) {
+                        await interaction.reply({ content: 'No handler for this button!', ephemeral: true });
+                    }
+                }
+            }
+            // Handle modal submissions
+            else if (interaction.isModalSubmit()) {
+                const command = client.commands.get('announce'); // Assuming 'announce' command handles modals
+                if (command && command.handleModal) {
+                    await command.handleModal(interaction, client);
+                } else {
+                    console.warn(`⚠️ No handler found for modal submission: ${interaction.customId}`);
+                    if (!interaction.replied && !interaction.deferred) {
+                        await interaction.reply({ content: 'No handler for this modal!', ephemeral: true });
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('❌ Error handling interaction:', error);
+            const errorMessage = { content: 'There was an error processing your request!', ephemeral: true };
+            if (interaction.deferred || interaction.replied) {
+                await interaction.followUp(errorMessage).catch(console.error);
+            } else {
+                await interaction.reply(errorMessage).catch(console.error);
             }
         }
     });

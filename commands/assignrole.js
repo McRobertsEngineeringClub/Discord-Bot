@@ -15,7 +15,7 @@ export default {
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
       return interaction.reply({
         embeds: [createStatusEmbed("Access Denied", "You need Manage Roles permission to use this command", "error")],
-        flags: 64, // Changed ephemeral to flags
+        ephemeral: true, // Changed flags to ephemeral
       })
     }
 
@@ -31,7 +31,7 @@ export default {
             "error",
           ),
         ],
-        flags: 64, // Changed ephemeral to flags
+        ephemeral: true, // Changed flags to ephemeral
       })
     }
 
@@ -45,7 +45,7 @@ export default {
       console.error(error)
 
       const errorEmbed = createRoleEmbed("error", user.tag, role.name, "Please check my permissions and try again")
-      await interaction.reply({ embeds: [errorEmbed], flags: 64 }) // Changed ephemeral to flags
+      await interaction.reply({ embeds: [errorEmbed], ephemeral: true }) // Changed flags to ephemeral
     }
   },
 }

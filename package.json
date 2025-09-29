@@ -1,27 +1,25 @@
 {
-  "name": "mcroberts-engineering-club-discord-bot",
+  "name": "discord-announcement-bot",
   "version": "1.0.0",
-  "description": "Discord bot for McRoberts Engineering Club with role management, announcements, and Google Sheets integration",
+  "description": "Discord bot with announcement and email functionality",
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node cleanup-and-register.js && node index.js",
-    "register": "node cleanup-and-register.js",
-    "cleanup": "node cleanup-and-register.js --cleanup-only",
-    "emergency": "node cleanup-and-register.js --emergency-cleanup",
-    "dev": "nodemon index.js"
+    "start": "cross-env NODE_ENV=development node index.js",
+    "dev": "cross-env NODE_ENV=development nodemon index.js",
+    "register": "cross-env NODE_ENV=development node deploy-commands.js"
   },
   "dependencies": {
+    "@discordjs/rest": "^2.2.0",
+    "cross-env": "^7.0.3",
     "discord.js": "^14.14.1",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "googleapis": "^128.0.0",
-    "nodemailer": "^6.9.8"
+    "node-fetch": "^3.3.2",
+    "nodemailer": "^6.9.7"
   },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "keywords": ["discord", "bot", "engineering", "club", "roles", "announcements"],
-  "author": "Tadjell Lyle",
-  "license": "MIT"
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
 }
