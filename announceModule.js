@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } from "discord.js";
-import { getClubEmails, sendEmails } from "./helpers.js"; // See helpers below
+import { getClubEmails, sendEmails } from "./emailUtils.js"; // Updated import
 import { createAnnouncementEmbed, createStatusEmbed, CLUB_THEME } from "./lib/embedStyles.js"; // Import for embeds
 
 // Store pending announcements
@@ -249,11 +249,16 @@ export default {
               }
 
               console.log(`Found ${emails.length} emails`);
-              await sendEmails(
+              const emailResults = await sendEmails(
                 announcement.emailSubject,
                 announcement.emailContent,
                 emails,
               );
+
+              if (emailResults.failed.length > 0) {
+                throw new Error(`Failed to send emails to ${emailResults.failed.length} recipients.`);
+              }
+
               emailSuccess = true;
               console.log("Email announcement sent successfully");
             } catch (error) {

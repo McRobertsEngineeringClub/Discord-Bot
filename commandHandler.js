@@ -11,25 +11,39 @@ dotenv.config({ path: ".env" }); // Explicitly load .env
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Register Commands (once, at bot startup)
+// Register Commands with duplicate prevention
 async function registerCommands(client) {
   const commandsToRegister = [];
   const commandCollection = new Collection();
-
+  const commandNames = new Set(); // Track unique command names
   // Add announceModule explicitly
-  commandsToRegister.push(announceModule.data.toJSON());
-  commandCollection.set(announceModule.data.name, announceModule);
-
-  // Dynamically load other commands
-  const commandFiles = fs.readdirSync(`${__dirname}/commands`).filter(file => file.endsWith('.js') && file !== 'announce.js');
-
+  if (!commandNames.has(announceModule.data.name)) {
+    commandsToRegister.push(announceModule.data.toJSON());
+    commandCollection.set(announceModule.data.name, announceModule);
+    commandNames.add(announceModule.data.name);
+    console.log(`✅ Loaded command: ${announceModule.data.name}`);
+  }
+  // Dynamically load other commands with duplicate check
+  const commandFiles = fs
+    .readdirSync(`${__dirname}/commands`)
+    .filter(file => file.endsWith('.js') && file !== 'announce.js');
   for (const file of commandFiles) {
     try {
       const command = await import(`./commands/${file}`);
+      
       if (command.default && command.default.data && command.default.data.name) {
+        const commandName = command.default.data.name;
+        
+        // Skip if command name already exists
+        if (commandNames.has(commandName)) {
+          console.warn(`⚠️ Skipping duplicate command: ${commandName} from ${file}`);
+          continue;
+        }
+        
         commandsToRegister.push(command.default.data.toJSON());
-        commandCollection.set(command.default.data.name, command.default);
-        console.log(`✅ Loaded command: ${command.default.data.name}`);
+        commandCollection.set(commandName, command.default);
+        commandNames.add(commandName);
+        console.log(`✅ Loaded command: ${commandName} from ${file}`);
       } else {
         console.warn(`⚠️ Command file ${file} doesn't export properly structured command`);
       }
@@ -37,43 +51,67 @@ async function registerCommands(client) {
       console.error(`❌ Error loading command ${file}:`, error);
     }
   }
-
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
-  // Register GLOBALLY, or replace with guild registration if preferred
-  await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commandsToRegister });
-  console.log('Commands registered!');
-
+  try {
+    console.log(`🔄 Registering ${commandsToRegister.length} commands...`);
+    
+    // Register globally (or use guild-specific if preferred)
+    await rest.put(
+      Routes.applicationCommands(process.env.CLIENT_ID), 
+      { body: commandsToRegister }
+    );
+    
+    console.log(`✅ Successfully registered ${commandsToRegister.length} commands!`);
+  } catch (error) {
+    console.error('❌ Error registering commands:', error);
+    throw error;
+  }
   // Store commands in client for interaction handling
   client.commands = commandCollection;
 }
 
 export default function setupCommands(client) {
   client.once(Events.ClientReady, async () => {
-    console.log(`Ready as ${client.user.tag}`);
-    await registerCommands(client);
+    console.log(`🤖 Ready as ${client.user.tag}`);
+    
+    try {
+      await registerCommands(client);
+    } catch (error) {
+      console.error('❌ Fatal error during command registration:', error);
+      process.exit(1);
+    }
   });
-
   client.on(Events.InteractionCreate, async (interaction) => {
+    // Command handling
     if (interaction.isCommand()) {
       const command = client.commands.get(interaction.commandName);
-      if (!command) return;
-
+      if (!command) {
+        console.warn(`⚠️ No command handler for: ${interaction.commandName}`);
+        return;
+      }
       try {
         await command.execute(interaction);
       } catch (error) {
-        console.error(error);
-        const replyOptions = {
-          content: "There was an error executing this command!",
-          flags: 64, // This sets the message as ephemeral
+        console.error(`❌ Error executing ${interaction.commandName}:`, error);
+        
+        const errorMessage = {
+          content: "❌ There was an error executing this command!",
+          ephemeral: true
         };
-        if (interaction.replied || interaction.deferred) {
-          await interaction.followUp(replyOptions);
-        } else {
-          await interaction.reply(replyOptions);
+        try {
+          if (interaction.replied || interaction.deferred) {
+            await interaction.followUp(errorMessage);
+          } else {
+            await interaction.reply(errorMessage);
+          }
+        } catch (replyError) {
+          console.error('❌ Could not send error message:', replyError);
         }
       }
-    } else if (interaction.isButton()) {
-      // Check if it's an announce module button interaction
+    }
+    
+    // Button interaction handling
+    else if (interaction.isButton()) {
       if (
         interaction.customId.startsWith("edit_") ||
         interaction.customId.startsWith("send_") ||
@@ -82,16 +120,16 @@ export default function setupCommands(client) {
       ) {
         await announceModule.handleButtonInteraction(interaction);
       }
-      // Add more button handlers for other commands if needed
-    } else if (interaction.isModalSubmit()) {
-      // Check if it's an announce module modal submission
+    }
+    
+    // Modal submission handling
+    else if (interaction.isModalSubmit()) {
       if (
         interaction.customId.startsWith("discord_edit_modal_") ||
         interaction.customId.startsWith("email_edit_modal_")
       ) {
         await announceModule.handleModalSubmit(interaction);
       }
-      // Add more modal handlers for other commands if needed
     }
   });
 }
