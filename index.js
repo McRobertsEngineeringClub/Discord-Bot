@@ -21,8 +21,8 @@ console.log("DEBUG: CLIENT_ID is", process.env.CLIENT_ID ? "set" : "not set");
 console.log("DEBUG: PORT is", process.env.PORT ? "set" : "not set");
 
 
-// Validate critical environment variables
-const requiredEnvVars = ['DISCORD_TOKEN', 'CLIENT_ID', 'PORT'];
+// Validate critical environment variables (PORT is provided by Render at runtime; don't require it)
+const requiredEnvVars = ['DISCORD_TOKEN', 'CLIENT_ID'];
 const missingVars = requiredEnvVars.filter(v => !process.env[v]);
 if (missingVars.length > 0) {
   console.error(`❌ Missing required environment variables: ${missingVars.join(', ')}`);
