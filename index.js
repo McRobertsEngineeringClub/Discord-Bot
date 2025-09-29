@@ -46,8 +46,8 @@ app.get("/health", (req, res) => {
     uptime: process.uptime()
   });
 });
-const server = app.listen(port, () => {
-  console.log(`🌐 Server is running on port ${port}`);
+const server = app.listen(port, '0.0.0.0', () => {
+  console.log(`🌐 Server is running on port ${port} and bound to 0.0.0.0`);
 });
 
 // Self-ping for Render.com free tier (every 14 minutes)
