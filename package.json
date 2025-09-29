@@ -5,8 +5,11 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node index.js"
+    "start": "node commandSetup.js && node index.js",
+    "register": "node commandSetup.js",
+    "cleanup": "node commandSetup.js --cleanup-only",
+    "emergency": "node commandSetup.js --emergency-cleanup",
+    "dev": "nodemon index.js"
   },
   "dependencies": {
     "discord.js": "^14.14.1",

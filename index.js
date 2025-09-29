@@ -1,8 +1,9 @@
-import { Client, GatewayIntentBits, Events } from "discord.js";
+import { Client, GatewayIntentBits, Events, Collection } from "discord.js";
 import express from "express";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
-import setupCommands from './commandHandler.js';
+import setupCommands from './commandHandler.js'; // Import the interaction handler
+import { CommandManager, cleanSpecificGuilds, emergencyCleanup } from './commandSetup.js'; // Import command setup utilities
 import { closeEmailConnection } from './emailUtils.js';
 // Load environment variables
 dotenv.config({ path: ".env" });
@@ -52,7 +53,7 @@ const client = new Client({
     GatewayIntentBits.GuildMembers
   ],
 });
-// Setup command handling
+// setupCommands now handles loading commands into client.commands and setting up interaction listeners
 setupCommands(client);
 // Introduction channel auto-role assignment
 const INTRODUCTION_CHANNEL_ID = process.env.INTRODUCTION_CHANNEL_ID;
