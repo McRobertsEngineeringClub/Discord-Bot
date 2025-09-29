@@ -11,19 +11,19 @@ dotenv.config({ path: ".env" }); // Explicitly load .env
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Register Commands with duplicate prevention
+// Clear existing commands and register fresh
 async function registerCommands(client) {
   const commandsToRegister = [];
   const commandCollection = new Collection();
   const commandNames = new Set(); // Track unique command names
-  // Add announceModule explicitly
+  // Add announceModule
   if (!commandNames.has(announceModule.data.name)) {
     commandsToRegister.push(announceModule.data.toJSON());
     commandCollection.set(announceModule.data.name, announceModule);
     commandNames.add(announceModule.data.name);
     console.log(`✅ Loaded command: ${announceModule.data.name}`);
   }
-  // Dynamically load other commands with duplicate check
+  // Load other commands
   const commandFiles = fs
     .readdirSync(`${__dirname}/commands`)
     .filter(file => file.endsWith('.js') && file !== 'announce.js');
@@ -53,20 +53,29 @@ async function registerCommands(client) {
   }
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
   try {
-    console.log(`🔄 Registering ${commandsToRegister.length} commands...`);
+    console.log(`🧹 Clearing old commands and registering ${commandsToRegister.length} new commands...`);
     
-    // Register globally (or use guild-specific if preferred)
-    await rest.put(
-      Routes.applicationCommands(process.env.CLIENT_ID), 
+    // IMPORTANT: This will completely replace all existing commands
+    const data = await rest.put(
+      Routes.applicationCommands(process.env.CLIENT_ID),
       { body: commandsToRegister }
     );
     
-    console.log(`✅ Successfully registered ${commandsToRegister.length} commands!`);
+    console.log(`✅ Successfully registered ${data.length} commands!`);
+    
+    // Optional: Clear guild-specific commands if you have any
+    if (process.env.GUILD_ID) {
+      await rest.put(
+        Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+        { body: [] } // Empty array clears guild commands
+      );
+      console.log('🧹 Cleared guild-specific commands');
+    }
+    
   } catch (error) {
     console.error('❌ Error registering commands:', error);
     throw error;
   }
-  // Store commands in client for interaction handling
   client.commands = commandCollection;
 }
 
@@ -86,7 +95,7 @@ export default function setupCommands(client) {
     if (interaction.isCommand()) {
       const command = client.commands.get(interaction.commandName);
       if (!command) {
-        console.warn(`⚠️ No command handler for: ${interaction.commandName}`);
+        console.warn(`⚠️ No handler for command: ${interaction.commandName}`);
         return;
       }
       try {
@@ -96,7 +105,7 @@ export default function setupCommands(client) {
         
         const errorMessage = {
           content: "❌ There was an error executing this command!",
-          ephemeral: true
+          flags: 64 // Use flags instead of ephemeral (fixes the warning)
         };
         try {
           if (interaction.replied || interaction.deferred) {
@@ -110,25 +119,42 @@ export default function setupCommands(client) {
       }
     }
     
-    // Button interaction handling
+    // Button interactions
     else if (interaction.isButton()) {
+      // Handle announce module buttons
       if (
         interaction.customId.startsWith("edit_") ||
         interaction.customId.startsWith("send_") ||
         interaction.customId.startsWith("test_") ||
         interaction.customId.startsWith("cancel_")
       ) {
-        await announceModule.handleButtonInteraction(interaction);
+        try {
+          await announceModule.handleButtonInteraction(interaction);
+        } catch (error) {
+          console.error('❌ Button interaction error:', error);
+          await interaction.reply({ 
+            content: '❌ An error occurred processing your request.', 
+            flags: 64 
+          }).catch(() => {});
+        }
       }
     }
     
-    // Modal submission handling
+    // Modal submissions
     else if (interaction.isModalSubmit()) {
       if (
         interaction.customId.startsWith("discord_edit_modal_") ||
         interaction.customId.startsWith("email_edit_modal_")
       ) {
-        await announceModule.handleModalSubmit(interaction);
+        try {
+          await announceModule.handleModalSubmit(interaction);
+        } catch (error) {
+          console.error('❌ Modal submission error:', error);
+          await interaction.reply({ 
+            content: '❌ An error occurred processing your submission.', 
+            flags: 64 
+          }).catch(() => {});
+        }
       }
     }
   });

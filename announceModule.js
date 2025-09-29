@@ -17,7 +17,7 @@ export default {
   async execute(interaction) {
     // Only allow users with ManageMessages
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-      await interaction.reply({ content: "Permission denied.", ephemeral: true });
+      await interaction.reply({ content: "Permission denied.", flags: 64 }); // Changed ephemeral to flags
       return;
     }
     const topic = interaction.options.getString("topic");
@@ -37,6 +37,12 @@ export default {
       createdBy: interaction.user.id,
       createdAt: new Date(),
     });
+
+    // Set a timeout for the announcement to expire (e.g., 30 minutes)
+    setTimeout(() => {
+      pendingAnnouncements.delete(announcementId);
+      console.log(`Cleaned up expired announcement: ${announcementId}`);
+    }, 30 * 60 * 1000); // 30 minutes
 
     const row1 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -99,7 +105,7 @@ export default {
         ),
       ],
       components: [row1, row2, row3],
-      ephemeral: true,
+      flags: 64, // Changed ephemeral to flags
     });
 
   },
@@ -116,7 +122,7 @@ export default {
       if (!announcement) {
         await interaction.reply({
           embeds: [createStatusEmbed("Announcement Expired", "This announcement has expired or been deleted", "error")],
-          ephemeral: true,
+          flags: 64, // Changed ephemeral to flags
         });
         return;
       }
@@ -127,7 +133,7 @@ export default {
       ) {
         await interaction.reply({
           embeds: [createStatusEmbed("Access Denied", "You can only edit your own announcements", "error")],
-          ephemeral: true,
+          flags: 64, // Changed ephemeral to flags
         });
         return;
       }
@@ -138,7 +144,7 @@ export default {
             await interaction.reply({
               content: announcement.discordContent,
               embeds: [announcement.discordEmbed],
-              ephemeral: true, // Should be ephemeral for preview
+              flags: 64, // Changed ephemeral to flags
             });
           }
           break;
@@ -207,7 +213,7 @@ export default {
                 "loading",
               ),
             ],
-            ephemeral: true,
+            flags: 64, // Changed ephemeral to flags
           });
 
           let discordSuccess = false;
@@ -337,7 +343,7 @@ export default {
       try {
         const errorEmbed = createStatusEmbed("Interaction Error", error.message, "error");
         if (!interaction.replied && !interaction.deferred) {
-          await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+          await interaction.reply({ embeds: [errorEmbed], flags: 64 }); // Changed ephemeral to flags
         } else {
           await interaction.editReply({ embeds: [errorEmbed] });
         }
@@ -355,7 +361,7 @@ export default {
       if (!announcement) {
         await interaction.reply({
           content: "❌ Announcement expired.",
-          ephemeral: true,
+          flags: 64, // Changed ephemeral to flags
         });
         return;
       }
@@ -445,7 +451,7 @@ export default {
       try {
         await interaction.reply({
           embeds: [createStatusEmbed("Update Error", error.message, "error")],
-          ephemeral: true,
+          flags: 64, // Changed ephemeral to flags
         });
       } catch (replyError) {
         console.error("Failed to send error message:", replyError);
