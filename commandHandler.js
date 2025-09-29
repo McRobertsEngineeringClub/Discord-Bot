@@ -5,7 +5,8 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 
-dotenv.config();
+dotenv.config({ path: ".env" }); // Explicitly load .env
+// dotenv.config({ path: "local.env" }); // Removed as local.env is not used on Render
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
