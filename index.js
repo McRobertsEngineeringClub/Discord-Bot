@@ -56,6 +56,7 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
   ],
 })
+const token = process.env.DISCORD_TOKEN // Re-introduce the token variable
 const INTRODUCTION_CHANNEL_ID = process.env.INTRODUCTION_CHANNEL_ID
 
 // Setup command handling
