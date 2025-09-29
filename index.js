@@ -138,6 +138,14 @@ client.on(Events.Warn, (warning) => {
   console.warn('⚠️ Discord warning:', warning);
 });
 
+// Surface unexpected errors so the process doesn't fail silently
+process.on('unhandledRejection', (error) => {
+  console.error('🧵 unhandledRejection:', error);
+});
+process.on('uncaughtException', (error) => {
+  console.error('🔥 uncaughtException:', error);
+});
+
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('🛑 SIGTERM received, shutting down gracefully...');
