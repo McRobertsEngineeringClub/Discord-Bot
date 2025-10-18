@@ -13,9 +13,8 @@ export default {
     .setDMPermission(false),
   async execute(interaction) {
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
-      return interaction.reply({
+      return interaction.editReply({
         embeds: [createStatusEmbed("Access Denied", "You need Manage Roles permission to use this command", "error")],
-        ephemeral: true, // Changed flags to ephemeral
       })
     }
 
@@ -23,7 +22,7 @@ export default {
     const role = interaction.options.getRole("role")
 
     if (role.position >= interaction.member.roles.highest.position) {
-      return interaction.reply({
+      return interaction.editReply({
         embeds: [
           createStatusEmbed(
             "Role Hierarchy Error",
@@ -31,7 +30,6 @@ export default {
             "error",
           ),
         ],
-        ephemeral: true, // Changed flags to ephemeral
       })
     }
 
@@ -40,12 +38,12 @@ export default {
       await member.roles.add(role)
 
       const successEmbed = createRoleEmbed("success", user.tag, role.name, `Role successfully assigned to ${user.tag}`)
-      await interaction.reply({ embeds: [successEmbed] })
+      await interaction.editReply({ embeds: [successEmbed] })
     } catch (error) {
       console.error(error)
 
       const errorEmbed = createRoleEmbed("error", user.tag, role.name, "Please check my permissions and try again")
-      await interaction.reply({ embeds: [errorEmbed], ephemeral: true }) // Changed flags to ephemeral
+      await interaction.editReply({ embeds: [errorEmbed] })
     }
   },
 }

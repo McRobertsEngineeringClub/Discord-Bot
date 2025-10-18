@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder } from "discord.js"
 
 const responses = [
   "The Nova Bus LFS is a North American, low floor transit bus. Introduced in 1994, the design provides a level entry without steps for passengers with limited mobility. The LFS has evolved over four generations and includes articulated, hybrid, natural gas, and electric model derivatives.",
@@ -35,17 +35,15 @@ const responses = [
   "stupid person detected",
   "Congrats, you failed your guard training! Please leave the server",
   "french baguette launcher",
-  "hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat  aaaaaaaaaaaaaaaaaaaa",
+  "hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat hello i am clogging your chat  aaaaaaaaaaaaaaaaaaaa",
   "you cannot rocket jump with the flak cannon",
-  "9540"
-];
+  "9540",
+]
 
 export default {
-  data: new SlashCommandBuilder()
-    .setName("lfs")
-    .setDescription("Get a random LFS-related message"),
+  data: new SlashCommandBuilder().setName("lfs").setDescription("Get a random LFS-related message"),
   async execute(interaction) {
-    const result = Math.floor(Math.random() * responses.length);
-    await interaction.reply(responses[result]);
-  }
-};
+    const result = Math.floor(Math.random() * responses.length)
+    await interaction.editReply(responses[result])
+  },
+}

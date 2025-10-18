@@ -115,11 +115,10 @@ export default {
 
   async execute(interaction) {
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-      return interaction.reply({
+      return interaction.editReply({
         embeds: [
           createStatusEmbed("Access Denied", "You need Manage Channels permission to use this command", "error"),
         ],
-        ephemeral: true,
       })
     }
 
@@ -132,7 +131,7 @@ export default {
           const archivedCategory = findCategoryByName(interaction.guild, "archived")
 
           if (!archivedCategory) {
-            return interaction.reply({
+            return interaction.editReply({
               embeds: [
                 createStatusEmbed(
                   "Category Not Found",
@@ -140,7 +139,6 @@ export default {
                   "error",
                 ),
               ],
-              ephemeral: true,
             })
           }
 
@@ -151,7 +149,7 @@ export default {
             channel.name,
             `Channel moved to **${archivedCategory.name}** category`,
           )
-          await interaction.reply({ embeds: [archiveEmbed] })
+          await interaction.editReply({ embeds: [archiveEmbed] })
           break
         }
 
@@ -160,7 +158,7 @@ export default {
           const execsCategory = findCategoryByName(interaction.guild, "execs")
 
           if (!execsCategory) {
-            return interaction.reply({
+            return interaction.editReply({
               embeds: [
                 createStatusEmbed(
                   "Category Not Found",
@@ -168,7 +166,6 @@ export default {
                   "error",
                 ),
               ],
-              ephemeral: true,
             })
           }
 
@@ -179,7 +176,7 @@ export default {
             channel.name,
             `Channel restored to **${execsCategory.name}** category`,
           )
-          await interaction.reply({ embeds: [unarchiveEmbed] })
+          await interaction.editReply({ embeds: [unarchiveEmbed] })
           break
         }
 
@@ -187,28 +184,24 @@ export default {
           const channel = interaction.options.getChannel("channel")
           const dateString = interaction.options.getString("date")
 
-          // Validate date format
           const dateRegex = /^\d{4}-\d{2}-\d{2}$/
           if (!dateRegex.test(dateString)) {
-            return interaction.reply({
+            return interaction.editReply({
               embeds: [createStatusEmbed("Invalid Date", "Please use YYYY-MM-DD format (e.g., 2024-06-22)", "error")],
-              ephemeral: true,
             })
           }
 
           const targetDate = new Date(dateString + "T00:00:00")
 
           if (targetDate <= new Date()) {
-            return interaction.reply({
+            return interaction.editReply({
               embeds: [createStatusEmbed("Invalid Date", "The scheduled date must be in the future", "error")],
-              ephemeral: true,
             })
           }
 
-          // Check if archived category exists
           const archivedCategory = findCategoryByName(interaction.guild, "archived")
           if (!archivedCategory) {
-            return interaction.reply({
+            return interaction.editReply({
               embeds: [
                 createStatusEmbed(
                   "Category Not Found",
@@ -216,7 +209,6 @@ export default {
                   "error",
                 ),
               ],
-              ephemeral: true,
             })
           }
 
@@ -233,13 +225,13 @@ export default {
             inline: true,
           })
 
-          await interaction.reply({ embeds: [scheduleEmbed] })
+          await interaction.editReply({ embeds: [scheduleEmbed] })
           break
         }
 
         case "list-scheduled": {
           if (scheduledTasks.length === 0) {
-            return interaction.reply({
+            return interaction.editReply({
               embeds: [createStatusEmbed("No Scheduled Tasks", "No scheduled archiving tasks found", "info")],
             })
           }
@@ -261,7 +253,7 @@ export default {
             taskFields,
           )
 
-          await interaction.reply({ embeds: [listEmbed] })
+          await interaction.editReply({ embeds: [listEmbed] })
           break
         }
 
@@ -270,7 +262,7 @@ export default {
           const taskIndex = scheduledTasks.findIndex((task) => task.id === taskId)
 
           if (taskIndex === -1) {
-            return interaction.reply({
+            return interaction.editReply({
               embeds: [
                 createStatusEmbed(
                   "Task Not Found",
@@ -278,7 +270,6 @@ export default {
                   "error",
                 ),
               ],
-              ephemeral: true,
             })
           }
 
@@ -292,13 +283,13 @@ export default {
             [{ name: "Task ID", value: `\`${taskId}\``, inline: true }],
           )
 
-          await interaction.reply({ embeds: [cancelEmbed] })
+          await interaction.editReply({ embeds: [cancelEmbed] })
           break
         }
       }
     } catch (error) {
       console.error("Archive command error:", error)
-      await interaction.reply({
+      await interaction.editReply({
         embeds: [
           createStatusEmbed(
             "Command Error",
@@ -306,7 +297,6 @@ export default {
             "error",
           ),
         ],
-        ephemeral: true,
       })
     }
   },

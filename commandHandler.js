@@ -53,62 +53,43 @@ export function setupInteractionHandlers(client) {
 
         if (!command) {
           console.log(`Unknown command: ${interaction.commandName}`)
-          if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({
-              content: "Unknown command!",
-              ephemeral: true,
-            })
-          }
+          await interaction.reply({
+            content: "Unknown command!",
+            ephemeral: true,
+          })
           return
         }
 
-        const timeoutPromise = new Promise((resolve) => {
-          setTimeout(async () => {
-            if (!interaction.replied && !interaction.deferred) {
-              await interaction.deferReply({ ephemeral: true })
-            }
-            resolve()
-          }, 2500) // Defer after 2.5 seconds if command hasn't responded
-        })
+        await interaction.deferReply({ ephemeral: false }).catch(console.error)
 
-        await Promise.race([command.execute(interaction, client), timeoutPromise])
+        // Execute the command
+        await command.execute(interaction, client)
       }
       // Handle button interactions
       else if (interaction.isButton()) {
-        if (!interaction.replied && !interaction.deferred) {
-          await interaction.deferUpdate().catch(async (err) => {
-            console.error("Failed to defer button update:", err)
-            // Fallback to deferReply if deferUpdate fails
-            if (!interaction.replied && !interaction.deferred) {
-              await interaction.deferReply({ ephemeral: true }).catch(console.error)
-            }
-          })
-        }
+        await interaction.deferUpdate().catch(async (err) => {
+          console.error("Failed to defer button update:", err)
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.deferReply({ ephemeral: true }).catch(console.error)
+          }
+        })
 
-        const command = client.commands.get("announce") // Assuming 'announce' command handles buttons
+        const command = client.commands.get("announce")
         if (command && command.handleButton) {
           await command.handleButton(interaction, client)
         } else {
           console.warn(`⚠️ No handler found for button interaction: ${interaction.customId}`)
-          if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: "No handler for this button!", ephemeral: true })
-          }
         }
       }
       // Handle modal submissions
       else if (interaction.isModalSubmit()) {
-        if (!interaction.replied && !interaction.deferred) {
-          await interaction.deferUpdate().catch(console.error)
-        }
+        await interaction.deferUpdate().catch(console.error)
 
-        const command = client.commands.get("announce") // Assuming 'announce' command handles modals
+        const command = client.commands.get("announce")
         if (command && command.handleModal) {
           await command.handleModal(interaction, client)
         } else {
           console.warn(`⚠️ No handler found for modal submission: ${interaction.customId}`)
-          if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: "No handler for this modal!", ephemeral: true })
-          }
         }
       }
     } catch (error) {

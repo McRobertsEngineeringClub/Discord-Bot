@@ -14,7 +14,7 @@ export default {
 
     const userEmbed = createUserInfoEmbed(user, member)
 
-    await interaction.reply({
+    await interaction.editReply({
       embeds: [userEmbed],
     })
   },
