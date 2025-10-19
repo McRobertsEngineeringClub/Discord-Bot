@@ -47,12 +47,16 @@ export async function loadBotCommands(client) {
 export function setupInteractionHandlers(client) {
   client.on(Events.InteractionCreate, async (interaction) => {
     try {
+      console.log(`[v0] Received interaction: ${interaction.type} - ${interaction.commandName || interaction.customId}`)
+
       // Handle slash commands
       if (interaction.isChatInputCommand()) {
+        console.log(`[v0] Processing slash command: ${interaction.commandName}`)
+
         const command = client.commands.get(interaction.commandName)
 
         if (!command) {
-          console.log(`Unknown command: ${interaction.commandName}`)
+          console.log(`[v0] Unknown command: ${interaction.commandName}`)
           await interaction.reply({
             content: "Unknown command!",
             ephemeral: true,
@@ -60,15 +64,24 @@ export function setupInteractionHandlers(client) {
           return
         }
 
-        await interaction.deferReply({ ephemeral: false }).catch(console.error)
+        console.log(`[v0] Deferring reply for command: ${interaction.commandName}`)
+        await interaction.deferReply({ ephemeral: false }).catch((err) => {
+          console.error(`[v0] Failed to defer reply:`, err)
+          throw err
+        })
+        console.log(`[v0] Successfully deferred reply for: ${interaction.commandName}`)
 
         // Execute the command
+        console.log(`[v0] Executing command: ${interaction.commandName}`)
         await command.execute(interaction, client)
+        console.log(`[v0] Command executed successfully: ${interaction.commandName}`)
       }
       // Handle button interactions
       else if (interaction.isButton()) {
+        console.log(`[v0] Processing button: ${interaction.customId}`)
+
         await interaction.deferUpdate().catch(async (err) => {
-          console.error("Failed to defer button update:", err)
+          console.error("[v0] Failed to defer button update:", err)
           if (!interaction.replied && !interaction.deferred) {
             await interaction.deferReply({ ephemeral: true }).catch(console.error)
           }
@@ -76,36 +89,45 @@ export function setupInteractionHandlers(client) {
 
         const command = client.commands.get("announce")
         if (command && command.handleButton) {
+          console.log(`[v0] Handling button with announce command`)
           await command.handleButton(interaction, client)
         } else {
-          console.warn(`⚠️ No handler found for button interaction: ${interaction.customId}`)
+          console.warn(`[v0] No handler found for button interaction: ${interaction.customId}`)
         }
       }
       // Handle modal submissions
       else if (interaction.isModalSubmit()) {
+        console.log(`[v0] Processing modal: ${interaction.customId}`)
+
         await interaction.deferUpdate().catch(console.error)
 
         const command = client.commands.get("announce")
         if (command && command.handleModal) {
+          console.log(`[v0] Handling modal with announce command`)
           await command.handleModal(interaction, client)
         } else {
-          console.warn(`⚠️ No handler found for modal submission: ${interaction.customId}`)
+          console.warn(`[v0] No handler found for modal submission: ${interaction.customId}`)
         }
       }
     } catch (error) {
-      console.error("❌ Error handling interaction:", error)
+      console.error("[v0] Error handling interaction:", error)
+      console.error("[v0] Error stack:", error.stack)
+
       const errorMessage = { content: "There was an error processing your request!", ephemeral: true }
 
       try {
         if (interaction.deferred) {
+          console.log(`[v0] Sending error via editReply`)
           await interaction.editReply(errorMessage)
         } else if (interaction.replied) {
+          console.log(`[v0] Sending error via followUp`)
           await interaction.followUp(errorMessage)
         } else {
+          console.log(`[v0] Sending error via reply`)
           await interaction.reply(errorMessage)
         }
       } catch (replyError) {
-        console.error("❌ Failed to send error message:", replyError)
+        console.error("[v0] Failed to send error message:", replyError)
       }
     }
   })
