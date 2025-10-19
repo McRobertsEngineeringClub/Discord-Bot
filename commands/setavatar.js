@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from "discord.js"
+import { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } from "discord.js"
 import { createStatusEmbed } from "../lib/embedStyles.js"
 
 export default {
@@ -16,16 +16,14 @@ export default {
     try {
       // Check permissions first before any interaction responses
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
-        await interaction.reply({
+        await interaction.editReply({
           embeds: [
             createStatusEmbed("Access Denied", "You need Manage Server permission to change the bot avatar", "error"),
           ],
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         })
         return
       }
-
-      await interaction.deferReply({ ephemeral: true })
 
       let avatarUrl = interaction.options.getString("url")
       const attachment = interaction.options.getAttachment("image")
@@ -90,7 +88,7 @@ export default {
         const errorEmbed = createStatusEmbed("Command Error", "An unexpected error occurred", "error")
 
         if (!interaction.replied && !interaction.deferred) {
-          await interaction.reply({ embeds: [errorEmbed], ephemeral: true })
+          await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral })
         } else if (interaction.deferred) {
           await interaction.editReply({ embeds: [errorEmbed] })
         }

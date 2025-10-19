@@ -155,17 +155,40 @@ process.on("SIGTERM", async () => {
 
 // Login to Discord
 console.log("🔄 Attempting to login to Discord...")
+console.log("[v0] Discord token length:", process.env.DISCORD_TOKEN?.length || 0)
+console.log("[v0] Discord token starts with:", process.env.DISCORD_TOKEN?.substring(0, 10) || "undefined")
+
+// Add a timeout to detect hanging login
+const loginTimeout = setTimeout(() => {
+  console.error("❌ Login timeout - Discord login took more than 30 seconds")
+  console.error("❌ This usually means:")
+  console.error("   1. Invalid DISCORD_TOKEN")
+  console.error("   2. Network connectivity issues")
+  console.error("   3. Discord API is down")
+  process.exit(1)
+}, 30000) // 30 second timeout
+
 client
   .login(process.env.DISCORD_TOKEN)
   .then(async () => {
-    // Made the callback async
+    clearTimeout(loginTimeout) // Clear the timeout on successful login
     console.log("✅ Discord login successful!")
+    console.log("[v0] Login promise resolved, waiting for ClientReady event...")
     // Call the initialize method of the announce command
     if (announceCommand.initialize) {
       await announceCommand.initialize()
     }
   })
   .catch((error) => {
-    console.error("❌ Failed to login to Discord:", error.message)
+    clearTimeout(loginTimeout) // Clear the timeout on error
+    console.error("❌ Failed to login to Discord:")
+    console.error("   Error name:", error.name)
+    console.error("   Error message:", error.message)
+    console.error("   Error code:", error.code)
+    console.error("   Full error:", error)
+    console.error("\n🔍 Troubleshooting:")
+    console.error("   1. Check if DISCORD_TOKEN is valid in your .env file")
+    console.error("   2. Regenerate token at https://discord.com/developers/applications")
+    console.error("   3. Ensure bot has proper intents enabled in Discord Developer Portal")
     process.exit(1)
   })

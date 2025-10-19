@@ -1,4 +1,4 @@
-import { Collection, Events } from "discord.js"
+import { Collection, Events, MessageFlags } from "discord.js"
 import { readdirSync, existsSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "url"
@@ -59,13 +59,13 @@ export function setupInteractionHandlers(client) {
           console.log(`[v0] Unknown command: ${interaction.commandName}`)
           await interaction.reply({
             content: "Unknown command!",
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           })
           return
         }
 
         console.log(`[v0] Deferring reply for command: ${interaction.commandName}`)
-        await interaction.deferReply({ ephemeral: false }).catch((err) => {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch((err) => {
           console.error(`[v0] Failed to defer reply:`, err)
           throw err
         })
@@ -83,7 +83,7 @@ export function setupInteractionHandlers(client) {
         await interaction.deferUpdate().catch(async (err) => {
           console.error("[v0] Failed to defer button update:", err)
           if (!interaction.replied && !interaction.deferred) {
-            await interaction.deferReply({ ephemeral: true }).catch(console.error)
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(console.error)
           }
         })
 
@@ -113,7 +113,7 @@ export function setupInteractionHandlers(client) {
       console.error("[v0] Error handling interaction:", error)
       console.error("[v0] Error stack:", error.stack)
 
-      const errorMessage = { content: "There was an error processing your request!", ephemeral: true }
+      const errorMessage = { content: "There was an error processing your request!", flags: MessageFlags.Ephemeral }
 
       try {
         if (interaction.deferred) {
