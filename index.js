@@ -66,14 +66,16 @@ if (process.env.NODE_ENV === "production") {
 }
 
 // Discord Client Configuration
+console.log("[v0] Configuring Discord client with intents...")
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.MessageContent, // PRIVILEGED - Must be enabled in Discord Developer Portal
+    GatewayIntentBits.GuildMembers, // PRIVILEGED - Must be enabled in Discord Developer Portal
   ],
 })
+console.log("[v0] Discord client configured successfully")
 
 // Command collection
 client.commands = new Collection() // Initialize Collection
@@ -158,20 +160,30 @@ console.log("🔄 Attempting to login to Discord...")
 console.log("[v0] Discord token length:", process.env.DISCORD_TOKEN?.length || 0)
 console.log("[v0] Discord token starts with:", process.env.DISCORD_TOKEN?.substring(0, 10) || "undefined")
 
-// Add a timeout to detect hanging login
 const loginTimeout = setTimeout(() => {
-  console.error("❌ Login timeout - Discord login took more than 30 seconds")
-  console.error("❌ This usually means:")
-  console.error("   1. Invalid DISCORD_TOKEN")
-  console.error("   2. Network connectivity issues")
-  console.error("   3. Discord API is down")
+  console.error("\n❌ LOGIN TIMEOUT - Discord connection took more than 30 seconds")
+  console.error("\n🔍 MOST COMMON CAUSE: Missing Privileged Intents")
+  console.error("\n📋 TO FIX THIS:")
+  console.error("   1. Go to https://discord.com/developers/applications")
+  console.error("   2. Select your bot application")
+  console.error("   3. Go to the 'Bot' section")
+  console.error("   4. Scroll down to 'Privileged Gateway Intents'")
+  console.error("   5. Enable these intents:")
+  console.error("      ✓ SERVER MEMBERS INTENT")
+  console.error("      ✓ MESSAGE CONTENT INTENT")
+  console.error("   6. Click 'Save Changes'")
+  console.error("   7. Restart your bot")
+  console.error("\n⚠️ OTHER POSSIBLE CAUSES:")
+  console.error("   - Invalid DISCORD_TOKEN (regenerate at Discord Developer Portal)")
+  console.error("   - Network/firewall blocking Discord gateway (wss://gateway.discord.gg)")
+  console.error("   - Discord API is down (check https://discordstatus.com)")
   process.exit(1)
 }, 30000) // 30 second timeout
 
 client
   .login(process.env.DISCORD_TOKEN)
   .then(async () => {
-    clearTimeout(loginTimeout) // Clear the timeout on successful login
+    clearTimeout(loginTimeout)
     console.log("✅ Discord login successful!")
     console.log("[v0] Login promise resolved, waiting for ClientReady event...")
     // Call the initialize method of the announce command
@@ -180,15 +192,39 @@ client
     }
   })
   .catch((error) => {
-    clearTimeout(loginTimeout) // Clear the timeout on error
-    console.error("❌ Failed to login to Discord:")
-    console.error("   Error name:", error.name)
-    console.error("   Error message:", error.message)
-    console.error("   Error code:", error.code)
-    console.error("   Full error:", error)
-    console.error("\n🔍 Troubleshooting:")
-    console.error("   1. Check if DISCORD_TOKEN is valid in your .env file")
-    console.error("   2. Regenerate token at https://discord.com/developers/applications")
-    console.error("   3. Ensure bot has proper intents enabled in Discord Developer Portal")
+    clearTimeout(loginTimeout)
+    console.error("\n❌ DISCORD LOGIN FAILED")
+    console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    console.error("Error Details:")
+    console.error("   Name:", error.name)
+    console.error("   Message:", error.message)
+    console.error("   Code:", error.code || "N/A")
+
+    if (error.code === "TokenInvalid" || error.message?.includes("token")) {
+      console.error("\n🔑 TOKEN ERROR DETECTED")
+      console.error("   Your DISCORD_TOKEN is invalid or expired")
+      console.error("   1. Go to https://discord.com/developers/applications")
+      console.error("   2. Select your bot")
+      console.error("   3. Go to 'Bot' section")
+      console.error("   4. Click 'Reset Token' and copy the new token")
+      console.error("   5. Update DISCORD_TOKEN in your .env file or OnRender environment variables")
+    } else if (error.code === "DisallowedIntents" || error.message?.includes("intent")) {
+      console.error("\n🚫 PRIVILEGED INTENTS ERROR DETECTED")
+      console.error("   Your bot is requesting privileged intents that aren't enabled")
+      console.error("   1. Go to https://discord.com/developers/applications")
+      console.error("   2. Select your bot")
+      console.error("   3. Go to 'Bot' section")
+      console.error("   4. Enable 'SERVER MEMBERS INTENT' and 'MESSAGE CONTENT INTENT'")
+      console.error("   5. Save changes and restart your bot")
+    } else {
+      console.error("\n🔍 GENERAL TROUBLESHOOTING:")
+      console.error("   1. Verify DISCORD_TOKEN is correct")
+      console.error("   2. Enable privileged intents in Discord Developer Portal")
+      console.error("   3. Check network connectivity")
+      console.error("   4. Check Discord status: https://discordstatus.com")
+    }
+
+    console.error("\n📄 Full error object:", JSON.stringify(error, null, 2))
+    console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
     process.exit(1)
   })
