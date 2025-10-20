@@ -4,22 +4,33 @@ import fetch from "node-fetch"
 import { startBot, client } from "./bot.js"
 import { closeEmailConnection } from "./emailUtils.js"
 
-// Load environment variables based on NODE_ENV set by cross-env in package.json
-// For local development, NODE_ENV is 'development', so .local.env will be loaded.
-// For production, NODE_ENV is 'production', so .env will be loaded.
 const envPath = process.env.NODE_ENV === "development" ? ".local.env" : ".env"
 dotenv.config({ path: envPath })
 
-console.log(`DEBUG: index.js loading environment variables from: ${envPath}`)
-console.log("DEBUG: DISCORD_TOKEN is", process.env.DISCORD_TOKEN ? "set" : "not set")
-console.log("DEBUG: CLIENT_ID is", process.env.CLIENT_ID ? "set" : "not set")
-console.log("DEBUG: PORT is", process.env.PORT ? "set" : "not set")
+console.log("=== Environment Variables Check ===")
+console.log("NODE_ENV:", process.env.NODE_ENV || "not set")
+console.log(
+  "DISCORD_TOKEN:",
+  process.env.DISCORD_TOKEN ? `set (${process.env.DISCORD_TOKEN.length} chars)` : "❌ NOT SET",
+)
+console.log("CLIENT_ID:", process.env.CLIENT_ID || "❌ NOT SET")
+console.log("PORT:", process.env.PORT || "❌ NOT SET")
+console.log("===================================")
 
 // Validate critical environment variables
-const requiredEnvVars = ["DISCORD_TOKEN", "CLIENT_ID", "PORT"]
+const requiredEnvVars = ["DISCORD_TOKEN", "CLIENT_ID"]
 const missingVars = requiredEnvVars.filter((v) => !process.env[v])
 if (missingVars.length > 0) {
-  console.error(`❌ Missing required environment variables: ${missingVars.join(", ")}`)
+  console.error(`\n❌ CRITICAL ERROR: Missing required environment variables: ${missingVars.join(", ")}`)
+  console.error("\n📝 On OnRender, set these in: Dashboard → Your Service → Environment")
+  console.error("   Required variables:")
+  console.error("   - DISCORD_TOKEN (your bot token from Discord Developer Portal)")
+  console.error("   - CLIENT_ID (your bot's application ID)")
+  console.error("   - GUILD_ID (your Discord server ID)")
+  console.error("   - EMAIL_FROM (Gmail address)")
+  console.error("   - EMAIL_PASSWORD (Gmail app password)")
+  console.error("   - GOOGLE_SHEETS_ID (your spreadsheet ID)")
+  console.error("   - Plus all GOOGLE_* service account variables\n")
   process.exit(1)
 }
 

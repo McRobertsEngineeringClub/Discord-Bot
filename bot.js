@@ -3,14 +3,14 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 import { dirname } from "path"
-import dotenv from "dotenv"
+// import dotenv from "dotenv"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 // Load environment variables
-const envPath = process.env.NODE_ENV === "development" ? ".local.env" : ".env"
-dotenv.config({ path: envPath })
+// const envPath = process.env.NODE_ENV === "development" ? ".local.env" : ".env"
+// dotenv.config({ path: envPath })
 
 const client = new Client({
   intents: [
@@ -128,11 +128,17 @@ async function registerCommands() {
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN)
 
   try {
-    console.log("🔄 Started refreshing application (/) commands.")
+    console.log(`🔄 Registering ${commands.length} commands...`)
     await rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID), { body: commands })
-    console.log("✅ Successfully reloaded application (/) commands.")
+    console.log(`✅ Successfully registered ${commands.length} commands`)
   } catch (error) {
     console.error("❌ Error registering commands:", error)
+    if (error.code === 401) {
+      console.error("\n⚠️  401 Unauthorized - Check that:")
+      console.error("   1. DISCORD_TOKEN is correct and matches CLIENT_ID")
+      console.error("   2. Bot has 'applications.commands' scope")
+      console.error("   3. Bot is invited to the guild with GUILD_ID\n")
+    }
   }
 }
 
@@ -196,11 +202,19 @@ function startBot() {
   })
 
   console.log("🔄 Attempting to login to Discord...")
+  console.log(`   Token length: ${process.env.DISCORD_TOKEN?.length || 0} characters`)
+
   client
     .login(process.env.DISCORD_TOKEN)
     .then(() => console.log("✅ Bot login initiated successfully"))
     .catch((error) => {
       console.error("❌ Failed to login to Discord:", error)
+      console.error("\n⚠️  Login failed - Check that:")
+      console.error("   1. DISCORD_TOKEN is set correctly in OnRender environment variables")
+      console.error("   2. Token is valid (not regenerated)")
+      console.error("   3. Privileged Gateway Intents are enabled in Discord Developer Portal")
+      console.error("      - SERVER MEMBERS INTENT")
+      console.error("      - MESSAGE CONTENT INTENT\n")
       process.exit(1)
     })
 }
