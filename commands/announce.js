@@ -108,9 +108,6 @@ export default {
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator), // Requires Administrator permissions
 
   async execute(interaction, client) {
-    // Use flags instead of ephemeral property
-    await interaction.deferReply({ flags: 64 })
-
     const topic = interaction.options.getString("topic")
     const details = interaction.options.getString("details")
     const announcementId = `${interaction.user.id}-${Date.now()}` // Unique ID for this announcement
@@ -175,7 +172,7 @@ export default {
         .setEmoji("❌"),
     )
 
-    await interaction.followUp({
+    await interaction.editReply({
       embeds: [embed],
       components: [row1, row2],
     })
