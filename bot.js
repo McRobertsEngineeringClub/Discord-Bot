@@ -143,7 +143,22 @@ async function registerCommands() {
 }
 
 function startBot() {
+  const readyTimeout = setTimeout(() => {
+    console.error("❌ CRITICAL: Bot failed to connect within 60 seconds")
+    console.error("   This usually means:")
+    console.error("   1. OnRender is blocking Discord's WebSocket gateway")
+    console.error("   2. Network connectivity issues")
+    console.error("   3. Discord API is down")
+    console.error("\n   Try:")
+    console.error("   1. Check Discord status: https://discordstatus.com")
+    console.error("   2. Restart the OnRender service")
+    console.error("   3. Check OnRender network settings")
+    process.exit(1)
+  }, 60000) // 60 second timeout
+
   client.once(Events.ClientReady, async (c) => {
+    clearTimeout(readyTimeout)
+
     console.log(`✅ Logged in as ${c.user.tag}`)
     console.log(`📊 Bot is in ${c.guilds.cache.size} guild(s)`)
     console.log(`🎯 Commands loaded: ${client.commands.size}`)
@@ -197,24 +212,51 @@ function startBot() {
     })
   }
 
+  client.on(Events.Debug, (info) => {
+    if (info.includes("Heartbeat") || info.includes("heartbeat")) {
+      // Skip heartbeat spam
+      return
+    }
+    console.log(`[v0 DEBUG] ${info}`)
+  })
+
+  client.on(Events.Warn, (info) => {
+    console.warn(`[v0 WARN] ${info}`)
+  })
+
   client.on(Events.Error, (error) => {
     console.error("❌ Discord client error:", error)
   })
 
+  client.ws.on("ready", () => {
+    console.log("✅ WebSocket connection established")
+  })
+
   console.log("🔄 Attempting to login to Discord...")
   console.log(`   Token length: ${process.env.DISCORD_TOKEN?.length || 0} characters`)
+  console.log(`   Node.js version: ${process.version}`)
+  console.log(`   Discord.js version: ${client.options.version || "unknown"}`)
 
-  client
-    .login(process.env.DISCORD_TOKEN)
-    .then(() => console.log("✅ Bot login initiated successfully"))
+  const loginPromise = client.login(process.env.DISCORD_TOKEN)
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error("Login API call timed out after 30 seconds")), 30000)
+  })
+
+  Promise.race([loginPromise, timeoutPromise])
+    .then(() => {
+      console.log("✅ Bot login API call successful")
+      console.log("⏳ Waiting for WebSocket connection to establish...")
+    })
     .catch((error) => {
+      clearTimeout(readyTimeout)
       console.error("❌ Failed to login to Discord:", error)
       console.error("\n⚠️  Login failed - Check that:")
       console.error("   1. DISCORD_TOKEN is set correctly in OnRender environment variables")
       console.error("   2. Token is valid (not regenerated)")
       console.error("   3. Privileged Gateway Intents are enabled in Discord Developer Portal")
       console.error("      - SERVER MEMBERS INTENT")
-      console.error("      - MESSAGE CONTENT INTENT\n")
+      console.error("      - MESSAGE CONTENT INTENT")
+      console.error("   4. OnRender is not blocking Discord's gateway (wss://gateway.discord.gg)\n")
       process.exit(1)
     })
 }
