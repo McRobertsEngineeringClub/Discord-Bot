@@ -41,49 +41,80 @@ for (const file of commandFiles) {
 // Interaction handler
 client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isChatInputCommand()) {
+    console.log(`[v0] Received command: ${interaction.commandName} from ${interaction.user.tag}`)
+
     const command = client.commands.get(interaction.commandName)
-    if (!command) return
+    if (!command) {
+      console.log(`[v0] Command not found: ${interaction.commandName}`)
+      return
+    }
 
     try {
+      console.log(`[v0] Deferring reply for ${interaction.commandName}...`)
       await interaction.deferReply()
+      console.log(`[v0] Successfully deferred reply for ${interaction.commandName}`)
+
+      console.log(`[v0] Executing command ${interaction.commandName}...`)
       await command.execute(interaction, client)
+      console.log(`[v0] Successfully executed command ${interaction.commandName}`)
     } catch (error) {
-      console.error(`❌ Error executing command ${interaction.commandName}:`, error)
-      const replyMethod = interaction.deferred ? "editReply" : "reply"
-      await interaction[replyMethod]({
-        content: "There was an error executing this command!",
-        flags: 64,
-      }).catch(console.error)
+      console.error(`[v0] Error executing command ${interaction.commandName}:`, error)
+      console.error(`[v0] Error stack:`, error.stack)
+
+      try {
+        const replyMethod = interaction.deferred || interaction.replied ? "editReply" : "reply"
+        console.log(`[v0] Attempting to send error message using ${replyMethod}`)
+        await interaction[replyMethod]({
+          content: "There was an error executing this command!",
+          flags: 64,
+        })
+      } catch (replyError) {
+        console.error(`[v0] Failed to send error message:`, replyError)
+      }
     }
   }
 
   if (interaction.isButton()) {
+    console.log(`[v0] Received button interaction: ${interaction.customId}`)
+
     try {
+      console.log(`[v0] Deferring button update...`)
       await interaction.deferUpdate()
+      console.log(`[v0] Successfully deferred button update`)
 
       if (interaction.customId.startsWith("announce_")) {
         const announceCommand = client.commands.get("announce")
         if (announceCommand?.handleButton) {
+          console.log(`[v0] Handling announce button...`)
           await announceCommand.handleButton(interaction, client)
+          console.log(`[v0] Successfully handled announce button`)
         }
       }
     } catch (error) {
-      console.error("❌ Error handling button:", error)
+      console.error("[v0] Error handling button:", error)
+      console.error("[v0] Button error stack:", error.stack)
     }
   }
 
   if (interaction.isModalSubmit()) {
+    console.log(`[v0] Received modal submit: ${interaction.customId}`)
+
     try {
+      console.log(`[v0] Deferring modal reply...`)
       await interaction.deferReply({ flags: 64 })
+      console.log(`[v0] Successfully deferred modal reply`)
 
       if (interaction.customId.startsWith("announce_modal_")) {
         const announceCommand = client.commands.get("announce")
         if (announceCommand?.handleModal) {
+          console.log(`[v0] Handling announce modal...`)
           await announceCommand.handleModal(interaction, client)
+          console.log(`[v0] Successfully handled announce modal`)
         }
       }
     } catch (error) {
-      console.error("❌ Error handling modal:", error)
+      console.error("[v0] Error handling modal:", error)
+      console.error("[v0] Modal error stack:", error.stack)
     }
   }
 })
