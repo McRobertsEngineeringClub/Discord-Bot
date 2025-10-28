@@ -57,7 +57,7 @@ const server = app.listen(port, () => {
 })
 
 if (process.env.NODE_ENV === "production") {
-  const RENDER_URL = process.env.RENDER_URL || "https://discord-bot-vf1d.onrender.com"
+  const RENDER_URL = process.env.RENDER_EXTERNAL_URL || "https://discord-bot-vf1d.onrender.com"
   setInterval(
     async () => {
       try {
