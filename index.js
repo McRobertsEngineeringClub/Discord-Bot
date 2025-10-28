@@ -17,7 +17,6 @@ console.log("CLIENT_ID:", process.env.CLIENT_ID || "❌ NOT SET")
 console.log("PORT:", process.env.PORT || "❌ NOT SET")
 console.log("===================================")
 
-// Validate critical environment variables
 const requiredEnvVars = ["DISCORD_TOKEN", "CLIENT_ID"]
 const missingVars = requiredEnvVars.filter((v) => !process.env[v])
 if (missingVars.length > 0) {
@@ -54,13 +53,11 @@ app.get("/health", (req, res) => {
 
 const server = app.listen(port, () => {
   console.log(`🌐 Server is running on port ${port}`)
-
   startBot()
 })
 
-// Self-ping for Render.com free tier (every 14 minutes)
 if (process.env.NODE_ENV === "production") {
-  const RENDER_URL = process.env.RENDER_URL || "https://mcroberts-engineering-club-discord-bot.onrender.com"
+  const RENDER_URL = process.env.RENDER_URL || "https://discord-bot-vf1d.onrender.com"
   setInterval(
     async () => {
       try {

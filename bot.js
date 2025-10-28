@@ -1,16 +1,11 @@
-import { Client, GatewayIntentBits, Collection, Events, REST, Routes } from "discord.js"
-import fs from "fs"
-import path from "path"
+import { Client, GatewayIntentBits, Collection, Events, REST, Routes, MessageFlags } from "discord.js"
+import { readdirSync, existsSync, mkdirSync } from "node:fs"
+import { join } from "node:path"
 import { fileURLToPath } from "url"
 import { dirname } from "path"
-// import dotenv from "dotenv"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-
-// Load environment variables
-// const envPath = process.env.NODE_ENV === "development" ? ".local.env" : ".env"
-// dotenv.config({ path: envPath })
 
 const client = new Client({
   intents: [
@@ -21,103 +16,130 @@ const client = new Client({
   ],
 })
 
-// Load commands
-client.commands = new Collection()
-const commandsPath = path.join(__dirname, "commands")
-const commandFiles = fs.readdirSync(commandsPath).filter((file) => file.endsWith(".js"))
+async function loadBotCommands(client) {
+  client.commands = new Collection()
 
-for (const file of commandFiles) {
-  const filePath = path.join(commandsPath, file)
-  const command = await import(`file://${filePath}`)
-  const cmd = command.default || command
-  if (cmd.data && cmd.execute) {
-    client.commands.set(cmd.data.name, cmd)
-    console.log(`✅ Loaded command: ${cmd.data.name}`)
-  } else {
-    console.warn(`⚠️ Command at ${filePath} is missing data or execute property`)
+  const commandsPath = join(__dirname, "commands")
+
+  if (!existsSync(commandsPath)) {
+    mkdirSync(commandsPath)
   }
+
+  const commandFiles = readdirSync(commandsPath).filter((file) => file.endsWith(".js"))
+
+  for (const file of commandFiles) {
+    const filePath = join(commandsPath, file)
+    try {
+      const fileUrl = new URL(`file:///${filePath}`).href
+      const commandModule = await import(fileUrl)
+      const command = commandModule.default || commandModule
+
+      if ("data" in command && "execute" in command) {
+        if (client.commands.has(command.data.name)) {
+          console.warn(`⚠️ Skipping duplicate command in client.commands: ${command.data.name} from ${file}`)
+          continue
+        }
+        client.commands.set(command.data.name, command)
+        console.log(`✅ Loaded command: ${command.data.name} from ${file}`)
+      } else {
+        console.warn(`⚠️ Warning: Command file ${file} is missing required "data" or "execute" properties.`)
+      }
+    } catch (error) {
+      console.error(`❌ Error loading command ${file}:`, error)
+    }
+  }
+  console.log(`📦 Total commands loaded into client.commands: ${client.commands.size}`)
 }
 
-// Interaction handler
-client.on(Events.InteractionCreate, async (interaction) => {
-  if (interaction.isChatInputCommand()) {
-    console.log(`[v0] Received command: ${interaction.commandName} from ${interaction.user.tag}`)
-
-    const command = client.commands.get(interaction.commandName)
-    if (!command) {
-      console.log(`[v0] Command not found: ${interaction.commandName}`)
-      return
-    }
-
+function setupInteractionHandlers(client) {
+  client.on(Events.InteractionCreate, async (interaction) => {
     try {
-      console.log(`[v0] Deferring reply for ${interaction.commandName}...`)
-      await interaction.deferReply()
-      console.log(`[v0] Successfully deferred reply for ${interaction.commandName}`)
+      console.log(`[v0] Received interaction: ${interaction.type} - ${interaction.commandName || interaction.customId}`)
 
-      console.log(`[v0] Executing command ${interaction.commandName}...`)
-      await command.execute(interaction, client)
-      console.log(`[v0] Successfully executed command ${interaction.commandName}`)
+      // Handle slash commands
+      if (interaction.isChatInputCommand()) {
+        console.log(`[v0] Processing slash command: ${interaction.commandName}`)
+
+        const command = client.commands.get(interaction.commandName)
+
+        if (!command) {
+          console.log(`[v0] Unknown command: ${interaction.commandName}`)
+          await interaction.reply({
+            content: "Unknown command!",
+            flags: MessageFlags.Ephemeral,
+          })
+          return
+        }
+
+        console.log(`[v0] Deferring reply for command: ${interaction.commandName}`)
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch((err) => {
+          console.error(`[v0] Failed to defer reply:`, err)
+          throw err
+        })
+        console.log(`[v0] Successfully deferred reply for: ${interaction.commandName}`)
+
+        console.log(`[v0] Executing command: ${interaction.commandName}`)
+        await command.execute(interaction, client)
+        console.log(`[v0] Command executed successfully: ${interaction.commandName}`)
+      }
+      // Handle button interactions
+      else if (interaction.isButton()) {
+        console.log(`[v0] Processing button: ${interaction.customId}`)
+
+        if (!interaction.customId.includes("_edit_")) {
+          await interaction.deferUpdate().catch(async (err) => {
+            console.error("[v0] Failed to defer button update:", err)
+            if (!interaction.replied && !interaction.deferred) {
+              await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(console.error)
+            }
+          })
+        }
+
+        const command = client.commands.get("announce")
+        if (command && command.handleButton) {
+          console.log(`[v0] Handling button with announce command`)
+          await command.handleButton(interaction, client)
+        } else {
+          console.warn(`[v0] No handler found for button interaction: ${interaction.customId}`)
+        }
+      }
+      // Handle modal submissions
+      else if (interaction.isModalSubmit()) {
+        console.log(`[v0] Processing modal: ${interaction.customId}`)
+
+        await interaction.deferUpdate().catch(console.error)
+
+        const command = client.commands.get("announce")
+        if (command && command.handleModal) {
+          console.log(`[v0] Handling modal with announce command`)
+          await command.handleModal(interaction, client)
+        } else {
+          console.warn(`[v0] No handler found for modal submission: ${interaction.customId}`)
+        }
+      }
     } catch (error) {
-      console.error(`[v0] Error executing command ${interaction.commandName}:`, error)
-      console.error(`[v0] Error stack:`, error.stack)
+      console.error("[v0] Error handling interaction:", error)
+      console.error("[v0] Error stack:", error.stack)
+
+      const errorMessage = { content: "There was an error processing your request!", flags: MessageFlags.Ephemeral }
 
       try {
-        const replyMethod = interaction.deferred || interaction.replied ? "editReply" : "reply"
-        console.log(`[v0] Attempting to send error message using ${replyMethod}`)
-        await interaction[replyMethod]({
-          content: "There was an error executing this command!",
-          flags: 64,
-        })
+        if (interaction.deferred) {
+          console.log(`[v0] Sending error via editReply`)
+          await interaction.editReply(errorMessage)
+        } else if (interaction.replied) {
+          console.log(`[v0] Sending error via followUp`)
+          await interaction.followUp(errorMessage)
+        } else {
+          console.log(`[v0] Sending error via reply`)
+          await interaction.reply(errorMessage)
+        }
       } catch (replyError) {
-        console.error(`[v0] Failed to send error message:`, replyError)
+        console.error("[v0] Failed to send error message:", replyError)
       }
     }
-  }
-
-  if (interaction.isButton()) {
-    console.log(`[v0] Received button interaction: ${interaction.customId}`)
-
-    try {
-      console.log(`[v0] Deferring button update...`)
-      await interaction.deferUpdate()
-      console.log(`[v0] Successfully deferred button update`)
-
-      if (interaction.customId.startsWith("announce_")) {
-        const announceCommand = client.commands.get("announce")
-        if (announceCommand?.handleButton) {
-          console.log(`[v0] Handling announce button...`)
-          await announceCommand.handleButton(interaction, client)
-          console.log(`[v0] Successfully handled announce button`)
-        }
-      }
-    } catch (error) {
-      console.error("[v0] Error handling button:", error)
-      console.error("[v0] Button error stack:", error.stack)
-    }
-  }
-
-  if (interaction.isModalSubmit()) {
-    console.log(`[v0] Received modal submit: ${interaction.customId}`)
-
-    try {
-      console.log(`[v0] Deferring modal reply...`)
-      await interaction.deferReply({ flags: 64 })
-      console.log(`[v0] Successfully deferred modal reply`)
-
-      if (interaction.customId.startsWith("announce_modal_")) {
-        const announceCommand = client.commands.get("announce")
-        if (announceCommand?.handleModal) {
-          console.log(`[v0] Handling announce modal...`)
-          await announceCommand.handleModal(interaction, client)
-          console.log(`[v0] Successfully handled announce modal`)
-        }
-      }
-    } catch (error) {
-      console.error("[v0] Error handling modal:", error)
-      console.error("[v0] Modal error stack:", error.stack)
-    }
-  }
-})
+  })
+}
 
 async function registerCommands() {
   const commands = []
@@ -133,32 +155,19 @@ async function registerCommands() {
     console.log(`✅ Successfully registered ${commands.length} commands`)
   } catch (error) {
     console.error("❌ Error registering commands:", error)
-    if (error.code === 401) {
-      console.error("\n⚠️  401 Unauthorized - Check that:")
-      console.error("   1. DISCORD_TOKEN is correct and matches CLIENT_ID")
-      console.error("   2. Bot has 'applications.commands' scope")
-      console.error("   3. Bot is invited to the guild with GUILD_ID\n")
-    }
   }
 }
 
-function startBot() {
-  const readyTimeout = setTimeout(() => {
-    console.error("❌ CRITICAL: Bot failed to connect within 60 seconds")
-    console.error("   This usually means:")
-    console.error("   1. OnRender is blocking Discord's WebSocket gateway")
-    console.error("   2. Network connectivity issues")
-    console.error("   3. Discord API is down")
-    console.error("\n   Try:")
-    console.error("   1. Check Discord status: https://discordstatus.com")
-    console.error("   2. Restart the OnRender service")
-    console.error("   3. Check OnRender network settings")
-    process.exit(1)
-  }, 60000) // 60 second timeout
+async function startBot() {
+  console.log("🔄 Attempting to login to Discord...")
 
+  // Load commands first
+  await loadBotCommands(client)
+
+  setupInteractionHandlers(client)
+
+  // Setup ready event
   client.once(Events.ClientReady, async (c) => {
-    clearTimeout(readyTimeout)
-
     console.log(`✅ Logged in as ${c.user.tag}`)
     console.log(`📊 Bot is in ${c.guilds.cache.size} guild(s)`)
     console.log(`🎯 Commands loaded: ${client.commands.size}`)
@@ -212,53 +221,14 @@ function startBot() {
     })
   }
 
-  client.on(Events.Debug, (info) => {
-    if (info.includes("Heartbeat") || info.includes("heartbeat")) {
-      // Skip heartbeat spam
-      return
-    }
-    console.log(`[v0 DEBUG] ${info}`)
-  })
-
-  client.on(Events.Warn, (info) => {
-    console.warn(`[v0 WARN] ${info}`)
-  })
-
-  client.on(Events.Error, (error) => {
-    console.error("❌ Discord client error:", error)
-  })
-
-  client.ws.on("ready", () => {
-    console.log("✅ WebSocket connection established")
-  })
-
-  console.log("🔄 Attempting to login to Discord...")
-  console.log(`   Token length: ${process.env.DISCORD_TOKEN?.length || 0} characters`)
-  console.log(`   Node.js version: ${process.version}`)
-  console.log(`   Discord.js version: ${client.options.version || "unknown"}`)
-
-  const loginPromise = client.login(process.env.DISCORD_TOKEN)
-  const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error("Login API call timed out after 30 seconds")), 30000)
-  })
-
-  Promise.race([loginPromise, timeoutPromise])
-    .then(() => {
-      console.log("✅ Bot login API call successful")
-      console.log("⏳ Waiting for WebSocket connection to establish...")
-    })
-    .catch((error) => {
-      clearTimeout(readyTimeout)
-      console.error("❌ Failed to login to Discord:", error)
-      console.error("\n⚠️  Login failed - Check that:")
-      console.error("   1. DISCORD_TOKEN is set correctly in OnRender environment variables")
-      console.error("   2. Token is valid (not regenerated)")
-      console.error("   3. Privileged Gateway Intents are enabled in Discord Developer Portal")
-      console.error("      - SERVER MEMBERS INTENT")
-      console.error("      - MESSAGE CONTENT INTENT")
-      console.error("   4. OnRender is not blocking Discord's gateway (wss://gateway.discord.gg)\n")
-      process.exit(1)
-    })
+  // Login to Discord
+  try {
+    await client.login(process.env.DISCORD_TOKEN)
+    console.log("✅ Discord login successful!")
+  } catch (error) {
+    console.error("❌ Failed to login to Discord:", error)
+    process.exit(1)
+  }
 }
 
 export { startBot, client }
