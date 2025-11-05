@@ -86,14 +86,13 @@ function setupInteractionHandlers(client) {
       else if (interaction.isButton()) {
         console.log(`[v0] Processing button: ${interaction.customId}`)
 
-        if (!interaction.customId.includes("_edit_")) {
-          await interaction.deferUpdate().catch(async (err) => {
-            console.error("[v0] Failed to defer button update:", err)
-            if (!interaction.replied && !interaction.deferred) {
-              await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(console.error)
-            }
-          })
-        }
+        await interaction.deferUpdate().catch(async (err) => {
+          console.error("[v0] Failed to defer button update:", err)
+          // Fallback if deferUpdate fails
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(console.error)
+          }
+        })
 
         const command = client.commands.get("announce")
         if (command && command.handleButton) {

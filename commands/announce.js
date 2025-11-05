@@ -8,8 +8,8 @@ import {
   TextInputBuilder,
   TextInputStyle,
   PermissionFlagsBits,
+  MessageFlags,
 } from "discord.js"
-import { getEmailList, sendEmails } from "../emailUtils.js"
 import { promises as fs } from "node:fs"
 import { join } from "node:path"
 
@@ -124,17 +124,28 @@ export default {
     console.log(`✨ New announcement created: ${announcementId}`)
     saveAnnouncements() // Save after new announcement
 
-    // Create control panel embed
     const embed = new EmbedBuilder()
       .setTitle("📢 Announcement Control Panel")
-      .setColor(0x0099ff)
+      .setDescription("Use the buttons below to edit, preview, test, or send your announcement.")
+      .setColor(0x5865f2) // Discord blurple color
       .addFields(
-        { name: "Topic", value: topic },
-        { name: "Discord Content", value: details.substring(0, 1024) || "No Discord content provided." },
-        { name: "Email Content", value: details.substring(0, 1024) || "No Email content provided." },
+        { name: "📝 Topic", value: `\`\`\`${topic}\`\`\``, inline: false },
+        {
+          name: "💬 Discord Content",
+          value: details.length > 0 ? `\`\`\`${details.substring(0, 1000)}\`\`\`` : "*No content*",
+          inline: false,
+        },
+        {
+          name: "📧 Email Content",
+          value: details.length > 0 ? `\`\`\`${details.substring(0, 1000)}\`\`\`` : "*No content*",
+          inline: false,
+        },
       )
       .setTimestamp()
-      .setFooter({ text: `Announcement ID: ${announcementId}` })
+      .setFooter({
+        text: `ID: ${announcementId} | Created by ${interaction.user.username}`,
+        iconURL: interaction.user.displayAvatarURL(),
+      })
 
     const row1 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -152,6 +163,11 @@ export default {
         .setLabel("Preview")
         .setStyle(ButtonStyle.Secondary)
         .setEmoji("👁️"),
+      new ButtonBuilder()
+        .setCustomId(`announce_test_email_${announcementId}`)
+        .setLabel("Test Email")
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji("🧪"),
     )
 
     const row2 = new ActionRowBuilder().addComponents(
@@ -189,11 +205,10 @@ export default {
     // Strip the "announce_" prefix
     const withoutPrefix = customId.replace(/^announce_/, "")
 
-    // Case: edit_discord_<id> or send_email_<id>
-    if (withoutPrefix.startsWith("edit_") || withoutPrefix.startsWith("send_")) {
+    if (withoutPrefix.startsWith("edit_") || withoutPrefix.startsWith("send_") || withoutPrefix.startsWith("test_")) {
       const parts = withoutPrefix.split("_")
-      action = parts[0] // "edit" or "send"
-      subAction = parts[1] // "discord" or "email"
+      action = parts[0] // "edit", "send", or "test"
+      subAction = parts[1] // "discord", "email", etc.
       announcementId = parts.slice(2).join("_")
     } else {
       // Case: preview_<id> or cancel_<id>
@@ -208,8 +223,87 @@ export default {
 
     const announcement = pendingAnnouncements.get(announcementId)
     if (!announcement) {
-      await interaction.editReply({ content: "❌ Announcement not found or expired!", components: [] })
+      const replyMethod = interaction.deferred ? "editReply" : "reply"
+      await interaction[replyMethod]({
+        content: "❌ Announcement not found or expired!",
+        components: [],
+        flags: MessageFlags.Ephemeral,
+      })
       return
+    }
+
+    const getControlPanelMessage = () => {
+      const embed = new EmbedBuilder()
+        .setTitle("📢 Announcement Control Panel")
+        .setDescription("Use the buttons below to edit, preview, test, or send your announcement.")
+        .setColor(0x5865f2)
+        .addFields(
+          { name: "📝 Topic", value: `\`\`\`${announcement.topic}\`\`\``, inline: false },
+          {
+            name: "💬 Discord Content",
+            value:
+              announcement.discordContent.length > 0
+                ? `\`\`\`${announcement.discordContent.substring(0, 1000)}\`\`\``
+                : "*No content*",
+            inline: false,
+          },
+          {
+            name: "📧 Email Content",
+            value:
+              announcement.emailContent.length > 0
+                ? `\`\`\`${announcement.emailContent.substring(0, 1000)}\`\`\``
+                : "*No content*",
+            inline: false,
+          },
+        )
+        .setTimestamp()
+        .setFooter({
+          text: `ID: ${announcementId} | Created by ${interaction.user.username}`,
+          iconURL: interaction.user.displayAvatarURL(),
+        })
+
+      const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`announce_edit_discord_${announcementId}`)
+          .setLabel("Edit Discord")
+          .setStyle(ButtonStyle.Primary)
+          .setEmoji("✏️"),
+        new ButtonBuilder()
+          .setCustomId(`announce_edit_email_${announcementId}`)
+          .setLabel("Edit Email")
+          .setStyle(ButtonStyle.Primary)
+          .setEmoji("📝"),
+        new ButtonBuilder()
+          .setCustomId(`announce_preview_${announcementId}`)
+          .setLabel("Preview")
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji("👁️"),
+        new ButtonBuilder()
+          .setCustomId(`announce_test_email_${announcementId}`)
+          .setLabel("Test Email")
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji("🧪"),
+      )
+
+      const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`announce_send_discord_${announcementId}`)
+          .setLabel("Send to Discord")
+          .setStyle(ButtonStyle.Success)
+          .setEmoji("📤"),
+        new ButtonBuilder()
+          .setCustomId(`announce_send_email_${announcementId}`)
+          .setLabel("Send Email")
+          .setStyle(ButtonStyle.Success)
+          .setEmoji("📧"),
+        new ButtonBuilder()
+          .setCustomId(`announce_cancel_${announcementId}`)
+          .setLabel("Cancel")
+          .setStyle(ButtonStyle.Danger)
+          .setEmoji("❌"),
+      )
+
+      return { embeds: [embed], components: [row1, row2] }
     }
 
     // --- PREVIEW ---
@@ -217,39 +311,65 @@ export default {
       const previewEmbed = new EmbedBuilder()
         .setTitle(`📢 ${announcement.topic}`)
         .setDescription(announcement.discordContent || "*No content*")
-        .setColor(0x1e90ff) // Engineering blue
-        .setThumbnail("attachment://club_logo.png") // reference file attachment
-        .setFooter({ text: `Announced by ${interaction.user.username}` }) // Consistent footer
+        .setColor(0x1e90ff)
+        .setThumbnail("attachment://club_logo.png")
+        .setFooter({ text: `Announced by ${interaction.user.username}` })
         .setTimestamp()
 
-      await interaction.editReply({
-        content: "**Discord Preview:**",
+      await interaction.followUp({
+        content: "**📱 Discord Preview:**",
         embeds: [previewEmbed],
-        components: [],
         files: [
           {
-            attachment: "./assets/club_logo.png", // put your PNG here in project
+            attachment: "./assets/club_logo.png",
             name: "club_logo.png",
           },
         ],
+        flags: MessageFlags.Ephemeral,
       })
 
-      // Email preview as a separate followUp
       await interaction.followUp({
-        content: `**Email Preview (Subject):**\n\`${announcement.topic}\`\n\n**Email Preview (Content):**\n\`\`\`\n${announcement.emailContent}\n\`\`\``,
-        flags: 64, // Use flags for ephemeral
+        content: `**📧 Email Preview:**\n\n**Subject:** \`${announcement.topic}\`\n\n**Body:**\n\`\`\`\n${announcement.emailContent}\n\`\`\``,
+        flags: MessageFlags.Ephemeral,
       })
+    } else if (action === "test" && subAction === "email") {
+      await interaction.followUp({
+        content: "🧪 Sending test email to club1engineering@gmail.com...",
+        flags: MessageFlags.Ephemeral,
+      })
+
+      try {
+        const { sendEmails } = await import("../emailUtils.js")
+        const testEmail = "club1engineering@gmail.com"
+
+        const results = await sendEmails(
+          `[TEST] ${announcement.topic}`,
+          `This is a test email.\n\n${announcement.emailContent}`,
+          [testEmail],
+        )
+
+        if (results.failed.length > 0) {
+          throw new Error(`Failed to send test email: ${results.failed[0].error}`)
+        }
+
+        await interaction.followUp({
+          content: `✅ Test email sent successfully to ${testEmail}!`,
+          flags: MessageFlags.Ephemeral,
+        })
+      } catch (error) {
+        console.error("Error sending test email:", error)
+        await interaction.followUp({
+          content: `❌ Failed to send test email: ${error.message}`,
+          flags: MessageFlags.Ephemeral,
+        })
+      }
     }
 
     // --- CANCEL ---
     else if (action === "cancel") {
       pendingAnnouncements.delete(announcementId)
       saveAnnouncements()
-      await interaction.editReply({
-        content: "❌ Announcement canceled and removed.",
-        embeds: [],
-        components: [],
-      })
+      await interaction.deleteReply() // Use deleteReply instead of update since interaction is already deferred
     }
 
     // --- EDIT ---
@@ -269,15 +389,8 @@ export default {
 
         modal.addComponents(new ActionRowBuilder().addComponents(contentInput))
 
-        try {
-          await interaction.showModal(modal)
-        } catch (error) {
-          console.error("Error showing modal (interaction already deferred):", error)
-          await interaction.editReply({
-            content: "⚠️ Please use the Edit buttons before previewing. Click Edit Discord again.",
-            components: interaction.message.components,
-          })
-        }
+        await interaction.deferUpdate() // Use deferUpdate interaction state to show modal
+        await interaction.showModal(modal)
       } else if (subAction === "email") {
         const modal = new ModalBuilder()
           .setCustomId(`announce_modal_email_${announcementId}`)
@@ -293,15 +406,8 @@ export default {
 
         modal.addComponents(new ActionRowBuilder().addComponents(contentInput))
 
-        try {
-          await interaction.showModal(modal)
-        } catch (error) {
-          console.error("Error showing modal (interaction already deferred):", error)
-          await interaction.editReply({
-            content: "⚠️ Please use the Edit buttons before previewing. Click Edit Email again.",
-            components: interaction.message.components,
-          })
-        }
+        await interaction.deferUpdate() // Use deferUpdate interaction state to show modal
+        await interaction.showModal(modal)
       }
     }
 
@@ -309,8 +415,8 @@ export default {
     else if (action === "send") {
       if (subAction === "discord") {
         await interaction.editReply({
-          embeds: [new EmbedBuilder().setDescription("📤 Sending Discord announcement...").setColor(0xffa500)],
-          components: [],
+          ...getControlPanelMessage(),
+          content: "📤 Sending Discord announcement...",
         })
 
         try {
@@ -322,8 +428,8 @@ export default {
           const announceEmbed = new EmbedBuilder()
             .setTitle(`📢 ${announcement.topic}`)
             .setDescription(announcement.discordContent)
-            .setColor(0x1e90ff) // Engineering blue
-            .setThumbnail("attachment://club_logo.png") // Add thumbnail
+            .setColor(0x1e90ff)
+            .setThumbnail("attachment://club_logo.png")
             .setTimestamp()
             .setFooter({ text: `Announced by ${interaction.user.username}` })
 
@@ -331,40 +437,35 @@ export default {
             embeds: [announceEmbed],
             files: [
               {
-                attachment: "./assets/club_logo.png", // Attach image for final announcement
+                attachment: "./assets/club_logo.png",
                 name: "club_logo.png",
               },
             ],
           })
 
           await interaction.editReply({
-            embeds: [
-              new EmbedBuilder()
-                .setDescription("✅ Discord announcement sent successfully!")
-                .setColor(0x00ff00)
-                .setFooter({ text: `Announcement ID: ${announcementId} | Discord sent!` }),
-            ],
+            content: "✅ Discord announcement sent successfully!",
+            embeds: [],
             components: [],
           })
+
+          pendingAnnouncements.delete(announcementId)
+          saveAnnouncements()
         } catch (error) {
           console.error("Error sending Discord announcement:", error)
           await interaction.editReply({
-            embeds: [
-              new EmbedBuilder()
-                .setDescription(`❌ Failed to send Discord announcement: ${error.message}`)
-                .setColor(0xff0000)
-                .setFooter({ text: `Announcement ID: ${announcementId} | Discord failed!` }),
-            ],
-            components: [],
+            ...getControlPanelMessage(),
+            content: `❌ Failed to send Discord announcement: ${error.message}`,
           })
         }
       } else if (subAction === "email") {
         await interaction.editReply({
-          embeds: [new EmbedBuilder().setDescription("📧 Sending email announcement...").setColor(0xffa500)],
-          components: [],
+          ...getControlPanelMessage(),
+          content: "📧 Sending email announcement...",
         })
 
         try {
+          const { getEmailList, sendEmails } = await import("../emailUtils.js")
           const emailList = await getEmailList()
 
           if (!emailList || emailList.length === 0) {
@@ -378,24 +479,18 @@ export default {
           }
 
           await interaction.editReply({
-            embeds: [
-              new EmbedBuilder()
-                .setDescription(`📧 Email announcement sent successfully to ${results.successful.length} recipients!`)
-                .setColor(0x00ff00)
-                .setFooter({ text: `Announcement ID: ${announcementId} | Email sent!` }),
-            ],
+            content: `✅ Email announcement sent successfully to ${results.successful.length} recipients!`,
+            embeds: [],
             components: [],
           })
+
+          pendingAnnouncements.delete(announcementId)
+          saveAnnouncements()
         } catch (error) {
           console.error("Error sending emails:", error)
           await interaction.editReply({
-            embeds: [
-              new EmbedBuilder()
-                .setDescription(`❌ Failed to send emails: ${error.message}`)
-                .setColor(0xff0000)
-                .setFooter({ text: `Announcement ID: ${announcementId} | Email failed!` }),
-            ],
-            components: [],
+            ...getControlPanelMessage(),
+            content: `❌ Failed to send emails: ${error.message}`,
           })
         }
       }
@@ -415,6 +510,7 @@ export default {
     if (!announcement) {
       await interaction.editReply({
         content: "❌ Announcement not found or expired!",
+        embeds: [],
         components: [],
       })
       return
@@ -423,6 +519,7 @@ export default {
     if (announcement.userId !== interaction.user.id) {
       await interaction.editReply({
         content: "❌ You can only manage your own announcements!",
+        embeds: [],
         components: [],
       })
       return
@@ -435,26 +532,37 @@ export default {
     } else if (type === "email") {
       announcement.emailContent = newContent
     }
-    saveAnnouncements() // Save after editing content
+    saveAnnouncements()
 
-    // Update control panel embed
     const embed = new EmbedBuilder()
       .setTitle("📢 Announcement Control Panel")
-      .setColor(0x0099ff)
+      .setDescription("Use the buttons below to edit, preview, test, or send your announcement.")
+      .setColor(0x5865f2)
       .addFields(
-        { name: "Topic", value: announcement.topic },
+        { name: "📝 Topic", value: `\`\`\`${announcement.topic}\`\`\``, inline: false },
         {
-          name: "Discord Content",
-          value: announcement.discordContent.substring(0, 1024) || "No Discord content provided.",
+          name: "💬 Discord Content",
+          value:
+            announcement.discordContent.length > 0
+              ? `\`\`\`${announcement.discordContent.substring(0, 1000)}\`\`\``
+              : "*No content*",
+          inline: false,
         },
-        { name: "Email Content", value: announcement.emailContent.substring(0, 1024) || "No Email content provided." },
+        {
+          name: "📧 Email Content",
+          value:
+            announcement.emailContent.length > 0
+              ? `\`\`\`${announcement.emailContent.substring(0, 1000)}\`\`\``
+              : "*No content*",
+          inline: false,
+        },
       )
       .setTimestamp()
-      .setFooter({ text: `Announcement ID: ${announcementId} | Content updated!` })
+      .setFooter({ text: `ID: ${announcementId} | Content updated!`, iconURL: interaction.user.displayAvatarURL() })
 
     await interaction.editReply({
       embeds: [embed],
-      components: interaction.message.components, // Keep the buttons
+      components: interaction.message.components,
     })
   },
 
