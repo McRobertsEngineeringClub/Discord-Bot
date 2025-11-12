@@ -434,6 +434,7 @@ export default {
             .setFooter({ text: `Announced by ${interaction.user.username}` })
 
           await channel.send({
+            content: "@everyone",
             embeds: [announceEmbed],
             files: [
               {
