@@ -40,6 +40,10 @@ const responses = [
   "9540"
 ];
 
+// const responses = [
+//   "TUNG."
+// ];
+
 export default {
   data: new SlashCommandBuilder()
     .setName("lfs")

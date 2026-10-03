@@ -1,7 +1,8 @@
 import { Collection, Events } from 'discord.js';
 import { readdirSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'url';
+import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { dirname } from 'path';
 
 // Helper for __dirname in ES Modules
@@ -23,7 +24,7 @@ export async function loadBotCommands(client) {
         const filePath = join(commandsPath, file);
         try {
             // Convert Windows path to file:// URL for dynamic import
-            const fileUrl = new URL(`file:///${filePath}`).href;
+            const fileUrl = pathToFileURL(filePath).href;
             const commandModule = await import(fileUrl);
             const command = commandModule.default || commandModule; // Handle both default and non-default exports
 

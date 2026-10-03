@@ -12,7 +12,7 @@ export default {
     const user = interaction.options.getUser("user") || interaction.user
     const member = await interaction.guild.members.fetch(user.id)
 
-    const userEmbed = createUserInfoEmbed(user, member)
+    const userEmbed = createUserInfoEmbed(user, member, interaction.user.username)
 
     await interaction.reply({
       embeds: [userEmbed],

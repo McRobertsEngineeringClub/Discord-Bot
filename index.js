@@ -1,5 +1,4 @@
 import { Client, GatewayIntentBits, Collection, Events } from "discord.js";
-import express from "express";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
 import { loadBotCommands, setupInteractionHandlers } from './commandHandler.js';
@@ -18,11 +17,10 @@ dotenv.config({ path: envPath });
 console.log(`DEBUG: index.js loading environment variables from: ${envPath}`);
 console.log("DEBUG: DISCORD_TOKEN is", process.env.DISCORD_TOKEN ? "set" : "not set");
 console.log("DEBUG: CLIENT_ID is", process.env.CLIENT_ID ? "set" : "not set");
-console.log("DEBUG: PORT is", process.env.PORT ? "set" : "not set");
 
 
 // Validate critical environment variables
-const requiredEnvVars = ['DISCORD_TOKEN', 'CLIENT_ID', 'PORT'];
+const requiredEnvVars = ['DISCORD_TOKEN', 'CLIENT_ID'];
 const missingVars = requiredEnvVars.filter(v => !process.env[v]);
 if (missingVars.length > 0) {
   console.error(`❌ Missing required environment variables: ${missingVars.join(', ')}`);
@@ -33,36 +31,6 @@ if (missingVars.length > 0) {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Express server setup
-const app = express();
-const port = process.env.PORT || 10000;
-app.get("/", (req, res) => {
-  res.send("Discord bot is running!");
-});
-app.get("/health", (req, res) => {
-  res.json({
-    status: "healthy",
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
-});
-const server = app.listen(port, () => {
-  console.log(`🌐 Server is running on port ${port}`);
-});
-
-// Self-ping for Render.com free tier (every 14 minutes)
-if (process.env.NODE_ENV === 'production') {
-  const RENDER_URL = process.env.RENDER_URL || "https://mcroberts-engineering-club-discord-bot.onrender.com"; // UPDATE THIS URL IF NEEDED
-  setInterval(async () => {
-    try {
-      const response = await fetch(`${RENDER_URL}/health`);
-      const data = await response.json();
-      console.log(`🏓 Keep-alive ping: ${data.timestamp}`);
-    } catch (error) {
-      console.error(`❌ Keep-alive ping failed:`, error.message);
-    }
-  }, 14 * 60 * 1000); // 14 minutes
-}
 
 // Discord Client Configuration
 const client = new Client({
@@ -82,7 +50,6 @@ client.commands = new Collection(); // Initialize Collection
     await loadBotCommands(client); // Load all commands into client.commands
     setupInteractionHandlers(client); // Setup event handlers for interactions
 })();
-
 
 // Introduction channel auto-role assignment
 const INTRODUCTION_CHANNEL_ID = process.env.INTRODUCTION_CHANNEL_ID;
@@ -105,27 +72,26 @@ if (INTRODUCTION_CHANNEL_ID) {
       if (gradeMatch) {
         const grade = parseInt(gradeMatch[1]);
         const gradeRole = message.guild.roles.cache.find(
-          (role) => role.name.toLowerCase() === `${grade}`
+          (role) => role.name.toLowerCase() === `grade ${grade}`
         );
         if (gradeRole) {
           try {
             await message.member.roles.add(gradeRole);
             console.log(`✅ Assigned Grade ${grade} role to ${message.author.tag}`);
+            if (membershipRole) {
+              try {
+                await message.member.roles.add(membershipRole);
+                console.log(`✅ Assigned Member role to ${message.author.tag}`);
+                await message.react("👋").catch(console.error);
+              } catch (error) {
+                console.error("❌ Error assigning Member role:", error.message);
+              }
+            }
           } catch (error) {
             console.error(`❌ Error assigning Grade ${grade} role:`, error.message);
           }
         }
       }
-
-      if (membershipRole) {
-        try {
-          await message.member.roles.add(membershipRole);
-          console.log(`✅ Assigned Member role to ${message.author.tag}`);
-        } catch (error) {
-          console.error("❌ Error assigning Member role:", error.message);
-        }
-      }
-      await message.react("👋").catch(console.error);
     }
   });
 }
