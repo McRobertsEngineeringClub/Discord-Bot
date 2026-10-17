@@ -139,7 +139,7 @@ async function sendEmails(subject, htmlContent, emailList) {
             html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                     <h2 style="color: #333;">${subject}</h2>
-                    <div style="padding: 20px; background-color: #f5f5f5; border-radius: 5px;">
+                    <div>
                         ${htmlContent.replace(/\n/g, '<br>')}
                     </div>
                     <footer style="margin-top: 20px; font-size: 12px; color: #666;">

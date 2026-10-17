@@ -13,6 +13,7 @@ import path from 'path'; // Needed for path.join
 // For production, NODE_ENV is 'production', so .env will be loaded.
 const envPath = process.env.NODE_ENV === 'development' ? '.local.env' : '.env';
 dotenv.config({ path: envPath });
+console.log(envPath)
 
 console.log(`DEBUG: index.js loading environment variables from: ${envPath}`);
 console.log("DEBUG: DISCORD_TOKEN is", process.env.DISCORD_TOKEN ? "set" : "not set");
@@ -57,10 +58,10 @@ if (INTRODUCTION_CHANNEL_ID) {
   client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return;
 
-    const encourageCommand = client.commands?.get("encourage");
-    if (encourageCommand?.checkMessage) {
-      await encourageCommand.checkMessage(message);
-    }
+    // const encourageCommand = client.commands?.get("encourage");
+    // if (encourageCommand?.checkMessage) {
+    //   await encourageCommand.checkMessage(message);
+    // }
 
     if (message.channel.id === INTRODUCTION_CHANNEL_ID) {
       const content = message.content.toLowerCase();

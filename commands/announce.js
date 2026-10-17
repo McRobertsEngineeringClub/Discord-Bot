@@ -159,6 +159,11 @@ export default {
                     .setStyle(ButtonStyle.Success)
                     .setEmoji('📧'),
                 new ButtonBuilder()
+                    .setCustomId(`announce_send_both_${announcementId}`)
+                    .setLabel('Send Both')
+                    .setStyle(ButtonStyle.Success)
+                    .setEmoji('🌍'),
+                new ButtonBuilder()
                     .setCustomId(`announce_cancel_${announcementId}`)
                     .setLabel('Cancel')
                     .setStyle(ButtonStyle.Danger)
@@ -186,7 +191,7 @@ export default {
         if (withoutPrefix.startsWith("edit_") || withoutPrefix.startsWith("send_")) {
             const parts = withoutPrefix.split("_");
             action = parts[0];      // "edit" or "send"
-            subAction = parts[1];   // "discord" or "email"
+            subAction = parts[1];   // "discord" or "email" or "both"
             announcementId = parts.slice(2).join("_");
         } else {
             // Case: preview_<id> or cancel_<id>
@@ -305,6 +310,7 @@ export default {
                         .setFooter({ text: `Announced by ${interaction.user.username}` });
 
                     await channel.send({
+                        content: "@everyone", 
                         embeds: [announceEmbed],
                         files: [{
                             attachment: "./assets/club_logo.png", // Attach image for final announcement
@@ -354,6 +360,80 @@ export default {
                     console.error('Error sending emails:', error);
                     await interaction.editReply({
                         embeds: [new EmbedBuilder().setDescription(`❌ Failed to send emails: ${error.message}`).setColor(0xFF0000).setFooter({ text: `Announcement ID: ${announcementId} | Email failed!` })],
+                        components: interaction.message.components
+                    });
+                }
+            } else if (subAction === 'both') {
+                await interaction.editReply({
+                    embeds: [new EmbedBuilder().setDescription('📧 Sending email announcement...').setColor(0xFFA500)],
+                    components: []
+                });
+
+                try {
+                    const emailList = await getEmailList();
+                    
+                    if (!emailList || emailList.length === 0) {
+                        throw new Error('No email addresses found!');
+                    }
+
+                    const results = await sendEmails(
+                        announcement.topic,
+                        announcement.emailContent,
+                        emailList
+                    );
+
+                    if (results.failed.length > 0) {
+                        throw new Error(`Failed to send emails to ${results.failed.length} recipients.`);
+                    }
+
+                    await interaction.editReply({
+                        embeds: [new EmbedBuilder().setDescription(`📧 Email announcement sent successfully to ${results.successful.length} recipients!`).setColor(0x00FF00).setFooter({ text: `Announcement ID: ${announcementId} | Email sent!` })],
+                        components: interaction.message.components
+                    });
+                } catch (error) {
+                    console.error('Error sending emails:', error);
+                    await interaction.editReply({
+                        embeds: [new EmbedBuilder().setDescription(`❌ Failed to send emails: ${error.message}`).setColor(0xFF0000).setFooter({ text: `Announcement ID: ${announcementId} | Email failed!` })],
+                        components: interaction.message.components
+                    });
+                }
+
+                await interaction.editReply({
+                    embeds: [new EmbedBuilder().setDescription('📤 Sending Discord announcement...').setColor(0xFFA500)],
+                    components: []
+                });
+
+                try {
+                    const channelId = process.env.ANNOUNCEMENT_CHANNEL_ID || announcement.channelId;
+                    const channel = await client.channels.fetch(channelId);
+                    
+                    if (!channel) throw new Error(`Announcement channel with ID ${channelId} not found.`);
+
+                    const announceEmbed = new EmbedBuilder()
+                        .setTitle(`📢 ${announcement.topic}`)
+                        .setDescription(announcement.discordContent)
+                        .setColor(0x1E90FF) // Engineering blue
+                        .setThumbnail("attachment://club_logo.png") // Add thumbnail
+                        .setTimestamp()
+                        .setFooter({ text: `Announced by ${interaction.user.username}` });
+
+                    await channel.send({
+                        content: "@everyone", 
+                        embeds: [announceEmbed],
+                        files: [{
+                            attachment: "./assets/club_logo.png", // Attach image for final announcement
+                            name: "club_logo.png"
+                        }]
+                    });
+
+                    await interaction.editReply({
+                        embeds: [new EmbedBuilder().setDescription('✅ Discord announcement sent successfully!').setColor(0x00FF00).setFooter({ text: `Announcement ID: ${announcementId} | Discord sent!` })],
+                        components: interaction.message.components
+                    });
+                } catch (error) {
+                    console.error('Error sending Discord announcement:', error);
+                    await interaction.editReply({
+                        embeds: [new EmbedBuilder().setDescription(`❌ Failed to send Discord announcement: ${error.message}`).setColor(0xFF0000).setFooter({ text: `Announcement ID: ${announcementId} | Discord failed!` })],
                         components: interaction.message.components
                     });
                 }

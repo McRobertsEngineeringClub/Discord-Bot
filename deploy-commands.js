@@ -8,7 +8,7 @@ import dotenv from 'dotenv';
 // Load environment variables based on NODE_ENV set by cross-env in package.json
 // For local development, NODE_ENV is 'development', so .local.env will be loaded.
 // For production, NODE_ENV is 'production', so .env will be loaded.
-const envPath = process.env.NODE_ENV === 'development' ? '.local.env' : '.env';
+const envPath = '.env';
 dotenv.config({ path: envPath });
 
 console.log(`DEBUG: deploy-commands.js loading environment variables from: ${envPath}`);
